@@ -1,0 +1,20 @@
+[package]
+name = "r3malloc"
+version = "0.1.0"
+edition = "2021"
+authors = ["Pavlo Pastaryev <p.pastaryev@gmail.com>"]
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+libc = "0.2"
+libc-print = "0.1.17"
+
+# Both profile.dev and profile.release panic configs are needed because of no_std
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
