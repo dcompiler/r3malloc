@@ -4,6 +4,7 @@
 mod heap;
 mod pages;
 mod defines;
+mod size_classes;
 
 use heap::Anchor;
 use libc_print::libc_println;
@@ -19,6 +20,7 @@ pub extern "C" fn test() -> u32
 	anch.set_state(2);
 	libc_println!("Hello from Rust: {}", anch.get_state());
 	let _alloc = unsafe {pages::page_alloc(2);};
+	size_classes::init_size_class();
 	anch.get_state()
 }
 
