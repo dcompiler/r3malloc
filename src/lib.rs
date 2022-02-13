@@ -1,6 +1,10 @@
-#![no_std] // No std disables Rust heap
+#![no_std] // Disables Rust heap
+#![allow(dead_code)] // FIXME: have it here so there's no warning spam
 
 mod heap;
+mod pages;
+mod defines;
+
 use heap::Anchor;
 use libc_print::libc_println;
 
@@ -14,6 +18,7 @@ pub extern "C" fn test() -> u32
 
 	anch.set_state(2);
 	libc_println!("Hello from Rust: {}", anch.get_state());
+	let _alloc = unsafe {pages::page_alloc(2);};
 	anch.get_state()
 }
 
