@@ -3,6 +3,7 @@
 
 mod defines;
 mod heap;
+mod log;
 mod pages;
 mod r3malloc;
 mod size_classes;
