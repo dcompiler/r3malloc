@@ -4,6 +4,7 @@
 mod defines;
 mod heap;
 mod pages;
+mod r3malloc;
 mod size_classes;
 
 use heap::Anchor;
@@ -18,10 +19,7 @@ pub extern "C" fn test() -> u32 {
 
     anch.set_state(2);
     libc_println!("Hello from Rust: {}", anch.get_state());
-    let _alloc = unsafe {
-        pages::page_alloc(2);
-    };
-    size_classes::init_size_class();
+    r3malloc::init_malloc();
     anch.get_state()
 }
 
@@ -29,6 +27,8 @@ use core::panic::PanicInfo;
 
 // Called on panic
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    libc_println!("{}", info);
+
     loop {}
 }
