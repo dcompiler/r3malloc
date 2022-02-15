@@ -1,5 +1,5 @@
 pub const LG_MAX_BLOCK_NUM: u32 = 31;
-pub const MAX_BLOCK_NUM: u32 = 2 << LG_MAX_BLOCK_NUM;
+pub const MAX_BLOCK_NUM: u64 = (2 as u64) << LG_MAX_BLOCK_NUM;
 
 pub struct Anchor {
     // state is first 2 bits

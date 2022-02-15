@@ -51,7 +51,7 @@ fn size_classes() -> [SizeClassData; MAX_SZ_IDX] {
 
     let mut i: usize = 1;
     let mut j: usize = 0;
-    while i < MAX_SZ {
+    while i < MAX_SZ_IDX {
         match size_class_filter_init(&SIZE_CLASSES_TABLE[j]) {
             Some(sc) => {
                 size_classes[i] = sc;
@@ -115,7 +115,7 @@ pub fn init_size_class() {
         sc.cache_block_num = sc.block_num * 1;
 
         assert!(sc.block_num > 0);
-        assert!(sc.block_num < MAX_BLOCK_NUM);
+        assert!((sc.block_num as u64) < MAX_BLOCK_NUM);
         assert!(sc.block_num >= sc.cache_block_num);
 
         // update value in SIZE_CLASSES
