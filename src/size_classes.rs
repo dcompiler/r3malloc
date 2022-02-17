@@ -3,14 +3,14 @@ use crate::heap::MAX_BLOCK_NUM;
 use core::assert;
 
 #[derive(Copy, Clone)]
-struct SizeClassData {
+pub struct SizeClassData {
     block_size: u32,
     sb_size: u32,
     block_num: u32,
     cache_block_num: u32,
 }
 
-const MAX_SZ_IDX: usize = 40;
+pub const MAX_SZ_IDX: usize = 40;
 const MAX_SZ: usize = (1 << 13) + (1 << 11) * 3;
 
 pub enum SizeClassOpt {
@@ -66,7 +66,7 @@ fn size_classes() -> [SizeClassData; MAX_SZ_IDX] {
 
 // NOTE: this is initialized in init_size_class
 // maybe we want to wrap it into an Option to ensure initialization?
-static mut SIZE_CLASSES: [SizeClassData; MAX_SZ_IDX] = [SizeClassData {
+pub static mut SIZE_CLASSES: [SizeClassData; MAX_SZ_IDX] = [SizeClassData {
     block_size: 0,
     sb_size: 0,
     block_num: 0,
