@@ -8,6 +8,7 @@ authors = ["Pavlo Pastaryev <p.pastaryev@gmail.com>"]
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
+atomic = "0.5"
 libc = "0.2"
 libc-print = "0.1.17"
 
