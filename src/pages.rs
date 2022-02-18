@@ -1,10 +1,10 @@
 use crate::defines::PAGE_MASK;
 use libc::*;
 
-pub unsafe fn page_alloc(size: usize) -> *mut c_void {
+pub unsafe fn page_alloc<T>(size: usize) -> *mut T {
     core::assert_eq!(size & PAGE_MASK, 0);
 
-    let mut ptr = mmap(
+    let ptr = mmap(
         0 as *mut c_void,
         size,
         PROT_READ | PROT_WRITE,
@@ -13,16 +13,16 @@ pub unsafe fn page_alloc(size: usize) -> *mut c_void {
         0,
     );
     if ptr == MAP_FAILED {
-        ptr = 0 as *mut c_void
+        return core::ptr::null_mut();
     }
 
-    ptr
+    ptr as *mut T
 }
 
-pub unsafe fn page_alloc_overcommit(size: usize) -> *mut c_void {
+pub unsafe fn page_alloc_overcommit<T>(size: usize) -> *mut T {
     core::assert_eq!(size & PAGE_MASK, 0);
 
-    let mut ptr = mmap(
+    let ptr = mmap(
         0 as *mut c_void,
         size,
         PROT_READ | PROT_WRITE,
@@ -31,10 +31,10 @@ pub unsafe fn page_alloc_overcommit(size: usize) -> *mut c_void {
         0,
     );
     if ptr == MAP_FAILED {
-        ptr = 0 as *mut c_void
+        return core::ptr::null_mut();
     }
 
-    ptr
+    ptr as *mut T
 }
 
 pub unsafe fn page_free(ptr: *mut c_void, size: usize) {
