@@ -30,7 +30,6 @@ macro_rules! log_debug {
     ( $( $x: expr ), * ) => {{}};
 }
 
-#[cfg(debug_assertions)]
 #[macro_export]
 macro_rules! log_err {
     ( $( $x: expr ), * ) => {{
@@ -41,10 +40,4 @@ macro_rules! log_err {
         )*
         libc_eprintln!();
     }};
-}
-
-#[cfg(not(debug_assertions))]
-#[macro_export]
-macro_rules! log_err {
-    ( $( $x: expr ), * ) => {{}};
 }
