@@ -7,6 +7,7 @@ mod log;
 mod pages;
 mod r3malloc;
 mod size_classes;
+mod tcache;
 
 use heap::Anchor;
 use libc_print::libc_println;

@@ -1,6 +1,6 @@
+use crate::heap::ProcHeap;
 use crate::log_debug;
 use crate::size_classes::{init_size_class, MAX_SZ_IDX};
-use crate::heap::{ProcHeap};
 
 static mut MALLOC_INIT: bool = false;
 
