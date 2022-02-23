@@ -47,7 +47,7 @@ impl Anchor {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct DescriptorNode<'a> {
     desc: &'a Descriptor<'a>,
 }
@@ -72,6 +72,7 @@ impl<'a> DescriptorNode<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct Descriptor<'a> {
     // used in free descriptor list
     next_free: Atomic<Option<DescriptorNode<'a>>>,
@@ -209,22 +210,23 @@ impl<'a> Descriptor<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct ProcHeap<'a> {
     partial_list: Option<Atomic<DescriptorNode<'a>>>,
     sc_idx: usize,
 }
 
 impl<'a> ProcHeap<'a> {
-    pub fn new(sc_idx: usize) -> Self {
+    pub const fn const_new(sc_idx: usize) -> Self {
         ProcHeap {
             partial_list: None,
             sc_idx: sc_idx,
         }
     }
 
-    // pub fn set_sc_idx(&self, sc_idx: usize) {
-    //     self.sc_idx = sc_idx;
-    // }
+    pub fn set_sc_idx(&mut self, sc_idx: usize) {
+        self.sc_idx = sc_idx;
+    }
 
     pub fn get_sc_idx(&self) -> usize {
         self.sc_idx
