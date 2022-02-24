@@ -66,22 +66,23 @@ impl Anchor {
 
 #[derive(Clone, Copy, Debug)]
 pub struct DescriptorNode<'a> {
-    desc: &'a Descriptor<'a>,
+    desc: *mut Descriptor<'a>,
 }
 
+// * DescriptorNode needs to always have a valid (non-null) pointer to a Descriptor
 impl<'a> DescriptorNode<'a> {
-    pub fn new(desc: &'a Descriptor<'a>) -> Self {
+    pub fn new(desc: *mut Descriptor<'a>) -> Self {
         // todo: make sure desc is cacheline aligned
         DescriptorNode { desc: desc }
     }
 
-    pub fn set_desc(&mut self, desc: &'a Descriptor<'a>, counter: u64) {
+    pub fn set_desc(&mut self, desc: *mut Descriptor<'a>, counter: u64) {
         // todo: make sure desc is cacheline aligned
         self.desc = desc;
     }
 
-    pub fn get_desc(&self) -> &'a Descriptor<'a> {
-        &self.desc
+    pub fn get_desc(&self) -> *mut Descriptor<'a> {
+        self.desc
     }
 
     pub fn get_counter(&self) -> u64 {
@@ -126,6 +127,10 @@ impl<'a> Descriptor<'a> {
         self.heap
     }
 
+    pub fn set_heap(&self, heap: &'a ProcHeap<'a>) {
+        self.heap = heap
+    }
+
     pub fn get_block_size(&self) -> u32 {
         self.block_size
     }
@@ -135,12 +140,12 @@ impl<'a> Descriptor<'a> {
     }
 
     // FIXME: not static lifetime?
-    pub fn alloc() -> &'static Self {
+    pub fn alloc() -> &'static mut Self {
         let old_head = unsafe { AVAIL_DESC.load(Ordering::SeqCst) };
         loop {
             match old_head {
                 Some(old_desc) => {
-                    let desc = old_desc.get_desc();
+                    let desc: &Descriptor = unsafe { old_desc.get_desc().as_ref().unwrap() };
                     let new_head = desc.get_next_free().load(Ordering::SeqCst);
                     new_head
                         .unwrap()
