@@ -9,6 +9,13 @@ pub const MAX_BLOCK_NUM: u64 = (2 as u64) << LG_MAX_BLOCK_NUM;
 
 pub const DESCRIPTOR_BLOCK_SZ: usize = 16 * PAGE;
 
+#[derive(PartialEq)]
+pub enum SbState {
+    Full,
+    Partial,
+    Empty,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Anchor {
     // state is first 2 bits
@@ -22,12 +29,22 @@ impl Anchor {
         Anchor { anch: 0x0 }
     }
 
-    pub fn set_state(&mut self, state: u32) {
-        self.anch = (self.anch & 0x3FFFFFFFFFFFFFFF) | ((state as u64) << 2 * LG_MAX_BLOCK_NUM)
+    pub fn set_state(&mut self, state: SbState) {
+        let st: u64 = match state {
+            SbState::Full => 0,
+            SbState::Partial => 1,
+            SbState::Empty => 2,
+        };
+        self.anch = (self.anch & 0x3FFFFFFFFFFFFFFF) | ((st) << 2 * LG_MAX_BLOCK_NUM)
     }
 
-    pub fn get_state(&self) -> u32 {
-        (self.anch >> 2 * LG_MAX_BLOCK_NUM) as u32
+    pub fn get_state(&self) -> SbState {
+        match self.anch >> 2 * LG_MAX_BLOCK_NUM {
+            0 => SbState::Full,
+            1 => SbState::Partial,
+            2 => SbState::Empty,
+            _ => panic!("Anchor state was not full, partial or empty"),
+        }
     }
 
     pub fn set_avail(&mut self, avail: u32) {

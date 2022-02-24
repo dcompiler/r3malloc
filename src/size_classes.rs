@@ -10,6 +10,20 @@ pub struct SizeClassData {
     cache_block_num: u32,
 }
 
+impl SizeClassData {
+    pub fn get_block_size(&self) -> u32 {
+        self.block_size
+    }
+
+    pub fn get_block_num(&self) -> u32 {
+        self.block_num
+    }
+
+    pub fn get_sb_size(&self) -> u32 {
+        self.sb_size
+    }
+}
+
 pub const MAX_SZ_IDX: usize = 40;
 const MAX_SZ: usize = (1 << 13) + (1 << 11) * 3;
 

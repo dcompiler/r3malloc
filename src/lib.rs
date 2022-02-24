@@ -19,10 +19,10 @@ extern crate libc;
 pub extern "C" fn test() -> u32 {
     let mut anch: Anchor = Anchor::new();
 
-    anch.set_state(2);
-    libc_println!("Hello from Rust: {}", anch.get_state());
+    anch.set_avail(123);
+    libc_println!("Hello from Rust: {}", anch.get_avail());
     r3malloc::init_malloc();
-    anch.get_state()
+    anch.get_avail()
 }
 
 use core::panic::PanicInfo;
