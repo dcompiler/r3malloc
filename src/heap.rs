@@ -234,14 +234,14 @@ impl<'a> Descriptor<'a> {
 
 #[derive(Debug)]
 pub struct ProcHeap<'a> {
-    partial_list: Option<Atomic<DescriptorNode<'a>>>,
+    partial_list: Atomic<Option<DescriptorNode<'a>>>,
     sc_idx: usize,
 }
 
 impl<'a> ProcHeap<'a> {
     pub const fn const_new(sc_idx: usize) -> Self {
         ProcHeap {
-            partial_list: None,
+            partial_list: Atomic::new(None),
             sc_idx: sc_idx,
         }
     }
@@ -252,6 +252,10 @@ impl<'a> ProcHeap<'a> {
 
     pub fn get_sc_idx(&self) -> usize {
         self.sc_idx
+    }
+
+    pub fn get_partial_list(&self) -> &Atomic<Option<DescriptorNode<'a>>> {
+        &self.partial_list
     }
 
     pub fn get_size_class(&self) -> &SizeClassData {
