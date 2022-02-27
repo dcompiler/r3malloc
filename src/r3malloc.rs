@@ -1,9 +1,10 @@
 use crate::heap::{Anchor, Descriptor, ProcHeap, SbState};
 use crate::log_debug;
 use crate::pages::page_alloc;
-use crate::size_classes::{init_size_class, MAX_SZ_IDX, SIZE_CLASSES};
-use crate::tcache::TCacheBin;
+use crate::size_classes::{init_size_class, get_size_class, MAX_SZ_IDX, SIZE_CLASSES, MAX_SZ};
+use crate::tcache::{TCacheBin, TCACHE};
 use atomic::Ordering;
+use likely_stable::unlikely;
 
 static mut MALLOC_INIT: bool = false;
 
@@ -12,7 +13,7 @@ static mut MALLOC_INIT: bool = false;
 const PROC_HEAP_INITIALIZER: ProcHeap = ProcHeap::const_new(0);
 pub static mut HEAPS: [ProcHeap; MAX_SZ_IDX] = [PROC_HEAP_INITIALIZER; MAX_SZ_IDX];
 
-pub fn init_malloc() {
+fn init_malloc() {
     log_debug!();
 
     // hard assumption that this can't be called concurrently
@@ -33,7 +34,7 @@ pub fn init_malloc() {
     }
 }
 
-pub fn malloc_from_new_sb(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -> usize {
+fn malloc_from_new_sb(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -> usize {
     let heap = unsafe { &HEAPS[sc_idx] };
     let sc = unsafe { &SIZE_CLASSES[sc_idx] };
     let desc = Descriptor::alloc();
@@ -65,7 +66,7 @@ pub fn malloc_from_new_sb(sc_idx: usize, cache: &mut TCacheBin, block_num: usize
         }
     }
 
-    cache.push_list(unsafe { Some(&mut *superblock) }, maxcount);
+    cache.push_list(superblock, maxcount);
 
     assert!(anchor.get_avail() < maxcount || anchor.get_state() == SbState::Full);
     assert!(anchor.get_count() < maxcount);
@@ -74,4 +75,40 @@ pub fn malloc_from_new_sb(sc_idx: usize, cache: &mut TCacheBin, block_num: usize
     // FIXME: assert_eq!(anchor.get_state() == SbState::Full)
 
     block_num + maxcount as usize
+}
+
+fn fill_cache(sc_idx: usize, cache: &mut TCacheBin) {
+    let mut block_num = 0;
+
+    // FIXME: malloc from partial sb
+
+    if block_num == 0 {
+        block_num = malloc_from_new_sb(sc_idx, cache, block_num);
+    }
+
+    let sc = unsafe { &SIZE_CLASSES[sc_idx] };
+    assert!(block_num > 0);
+    assert!(block_num <= sc.get_cache_block_num() as usize);
+}
+
+pub fn do_malloc(size: usize) -> *mut u8 {
+    // ensure malloc is initialized
+    if unlikely(unsafe { !MALLOC_INIT }) {
+        init_malloc();
+    }
+
+    // large block allocation
+    if unlikely(size > MAX_SZ) {
+        todo!();
+    }
+
+    let sc_idx = get_size_class(size);
+
+    let cache = unsafe { &mut TCACHE[sc_idx] };
+
+    if unlikely(cache.get_block_num() == 0) {
+        fill_cache(sc_idx, cache);
+    }
+
+    cache.pop_block()
 }

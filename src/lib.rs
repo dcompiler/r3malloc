@@ -21,10 +21,14 @@ pub extern "C" fn test() -> u32 {
 
     anch.set_avail(128);
     libc_println!("Hello from Rust: {}", anch.get_avail());
-    r3malloc::init_malloc();
     let _dummy = heap::Descriptor::alloc();
     let _dummy2 = heap::Descriptor::alloc();
     anch.get_avail()
+}
+
+#[no_mangle]
+pub extern "C" fn malloc(size: usize) -> *mut u8 {
+    r3malloc::do_malloc(size)
 }
 
 use core::panic::PanicInfo;
