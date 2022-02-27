@@ -1,6 +1,9 @@
-use crate::heap::ProcHeap;
+use crate::heap::{Anchor, Descriptor, ProcHeap, SbState};
 use crate::log_debug;
-use crate::size_classes::{init_size_class, MAX_SZ_IDX};
+use crate::pages::page_alloc;
+use crate::size_classes::{init_size_class, MAX_SZ_IDX, SIZE_CLASSES};
+use crate::tcache::TCacheBin;
+use atomic::Ordering;
 
 static mut MALLOC_INIT: bool = false;
 
@@ -28,4 +31,47 @@ pub fn init_malloc() {
             HEAPS[sz_idx].set_sc_idx(sz_idx);
         }
     }
+}
+
+pub fn malloc_from_new_sb(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -> usize {
+    let heap = unsafe { &HEAPS[sc_idx] };
+    let sc = unsafe { &SIZE_CLASSES[sc_idx] };
+    let desc = Descriptor::alloc();
+    let block_size = sc.get_block_size();
+    let maxcount = sc.get_block_num();
+
+    // FIXME: ASSERT(desc); should we check for this???
+
+    desc.set_heap(heap);
+    desc.set_block_size(block_size);
+    desc.set_maxcount(maxcount);
+    unsafe {
+        desc.set_superblock(&mut *page_alloc::<u8>(sc.get_sb_size() as usize));
+    }
+
+    let mut anchor = Anchor::new();
+    anchor.set_avail(maxcount);
+    anchor.set_count(0);
+    anchor.set_state(SbState::Full);
+    desc.get_anchor().store(anchor, Ordering::SeqCst);
+
+    let superblock: *mut u8 = desc.get_superblock() as *mut u8;
+
+    for i in 0..maxcount - 1 {
+        unsafe {
+            let block = superblock.offset((i * block_size) as isize);
+            let next = superblock.offset(((i + 1) * block_size) as isize);
+            *(block as *mut *mut u8) = next;
+        }
+    }
+
+    cache.push_list(unsafe { Some(&mut *superblock) }, maxcount);
+
+    assert!(anchor.get_avail() < maxcount || anchor.get_state() == SbState::Full);
+    assert!(anchor.get_count() < maxcount);
+
+    // FIXME: register_desc(desc)
+    // FIXME: assert_eq!(anchor.get_state() == SbState::Full)
+
+    block_num + maxcount as usize
 }

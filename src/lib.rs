@@ -22,8 +22,8 @@ pub extern "C" fn test() -> u32 {
     anch.set_avail(128);
     libc_println!("Hello from Rust: {}", anch.get_avail());
     r3malloc::init_malloc();
-    let dummy = heap::Descriptor::alloc();
-    let dummy2 = heap::Descriptor::alloc();
+    let _dummy = heap::Descriptor::alloc();
+    let _dummy2 = heap::Descriptor::alloc();
     anch.get_avail()
 }
 
