@@ -11,6 +11,7 @@ crate-type = ["cdylib", "staticlib"]
 atomic = "0.5"
 libc = "0.2"
 libc-print = "0.1.17"
+likely_stable = "0.1.2"
 
 # Both profile.dev and profile.release panic configs are needed because of no_std
 

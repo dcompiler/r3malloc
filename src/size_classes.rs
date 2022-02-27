@@ -22,10 +22,14 @@ impl SizeClassData {
     pub fn get_sb_size(&self) -> u32 {
         self.sb_size
     }
+
+    pub fn get_cache_block_num(&self) -> u32 {
+        self.cache_block_num
+    }
 }
 
 pub const MAX_SZ_IDX: usize = 40;
-const MAX_SZ: usize = (1 << 13) + (1 << 11) * 3;
+pub const MAX_SZ: usize = (1 << 13) + (1 << 11) * 3;
 
 pub enum SizeClassOpt {
     Yes,
@@ -149,6 +153,11 @@ pub fn init_size_class() {
             lookup_idx += 1;
         }
     }
+}
+
+#[inline(always)]
+pub fn get_size_class(size: usize) -> usize {
+    unsafe { SIZE_CLASS_LOOKUP[size] }
 }
 
 // size class data, from jemalloc 5.0
