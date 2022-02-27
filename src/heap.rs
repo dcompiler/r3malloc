@@ -1,4 +1,4 @@
-use crate::defines::PAGE;
+use crate::defines::{PAGE, CACHELINE_MASK};
 use crate::pages::page_alloc;
 use crate::size_classes::{SizeClassData, SIZE_CLASSES};
 use atomic::{Atomic, Ordering};
@@ -76,7 +76,7 @@ impl<'a> DescriptorNode<'a> {
         DescriptorNode { desc: desc }
     }
 
-    pub fn set_desc(&mut self, desc: *mut Descriptor<'a>, counter: u64) {
+    pub fn set_desc(&mut self, desc: *mut Descriptor<'a>, counter: usize) {
         // todo: make sure desc is cacheline aligned
         self.desc = desc;
     }
@@ -85,8 +85,8 @@ impl<'a> DescriptorNode<'a> {
         self.desc
     }
 
-    pub fn get_counter(&self) -> u64 {
-        todo!()
+    pub fn get_counter(&self) -> usize {
+        (self.desc as usize) & CACHELINE_MASK
     }
 }
 
@@ -98,7 +98,7 @@ pub struct Descriptor<'a> {
     next_partial: Atomic<Option<DescriptorNode<'a>>>,
 
     anchor: Atomic<Anchor>,
-    superblock: &'a u8,
+    superblock: &'a mut u8,
     heap: &'a ProcHeap<'a>,
     block_size: u32,
     maxcount: u32,
@@ -119,7 +119,7 @@ impl<'a> Descriptor<'a> {
         &self.anchor
     }
 
-    pub fn get_superblock(&self) -> &'a u8 {
+    pub fn get_superblock(&'a mut self) -> &'a mut u8 {
         self.superblock
     }
 
@@ -127,7 +127,7 @@ impl<'a> Descriptor<'a> {
         self.heap
     }
 
-    pub fn set_heap(&self, heap: &'a ProcHeap<'a>) {
+    pub fn set_heap(&mut self, heap: &'a ProcHeap<'a>) {
         self.heap = heap
     }
 
@@ -139,13 +139,25 @@ impl<'a> Descriptor<'a> {
         self.maxcount
     }
 
+    pub fn set_block_size(&mut self, block_size: u32) {
+        self.block_size = block_size
+    }
+
+    pub fn set_maxcount(&mut self, maxcount: u32) {
+        self.maxcount = maxcount
+    }
+
+    pub fn set_superblock(&mut self, superblock: &'a mut u8) {
+        self.superblock = superblock
+    }
+
     // FIXME: not static lifetime?
     pub fn alloc() -> &'static mut Self {
         let old_head = unsafe { AVAIL_DESC.load(Ordering::SeqCst) };
         loop {
             match old_head {
                 Some(old_desc) => {
-                    let desc: &Descriptor = unsafe { old_desc.get_desc().as_ref().unwrap() };
+                    let desc: &mut Descriptor = unsafe { old_desc.get_desc().as_mut().unwrap() };
                     let new_head = desc.get_next_free().load(Ordering::SeqCst);
                     new_head
                         .unwrap()
@@ -186,7 +198,7 @@ impl<'a> Descriptor<'a> {
                             unsafe {
                                 (*prev)
                                     .get_next_free()
-                                    .store(Some(DescriptorNode::new(&*curr)), Ordering::SeqCst)
+                                    .store(Some(DescriptorNode::new(&mut *curr)), Ordering::SeqCst)
                             };
                         }
 
@@ -204,10 +216,10 @@ impl<'a> Descriptor<'a> {
                             (*prev).get_next_free().store(old_head, Ordering::SeqCst);
                             match new_head {
                                 Some(mut d) => {
-                                    d.set_desc(&*first, old_head.unwrap().get_counter() + 1);
+                                    d.set_desc(&mut *first, old_head.unwrap().get_counter() + 1);
                                 }
                                 None => {
-                                    new_head = Some(DescriptorNode::new(&*first));
+                                    new_head = Some(DescriptorNode::new(&mut *first));
                                 }
                             }
 
@@ -225,7 +237,7 @@ impl<'a> Descriptor<'a> {
                         }
                     }
 
-                    return unsafe { &*ret };
+                    return unsafe { &mut *ret };
                 }
             };
         }
