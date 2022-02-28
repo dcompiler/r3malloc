@@ -1,6 +1,6 @@
-#include<stdio.h>
+#include <stdio.h>
 
-void *malloc(long unsigned int size);
+void *malloc(long unsigned int);
 
 int main() {
 	int *arr = (int*)malloc(10 * sizeof(int));

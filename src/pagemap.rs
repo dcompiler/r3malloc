@@ -22,6 +22,13 @@ pub struct PageInfo<'a> {
 
 impl<'a> PageInfo<'a> {
     #[inline(always)]
+    pub fn new() -> Self {
+        PageInfo {
+            desc: core::ptr::null_mut(),
+        }
+    }
+
+    #[inline(always)]
     pub fn set(&mut self, desc: *mut Descriptor, sc_idx: usize) {
         assert_eq!((desc as usize) & SC_MASK, 0);
         assert!(sc_idx < MAX_SZ_IDX);

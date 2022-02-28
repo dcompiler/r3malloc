@@ -1,10 +1,12 @@
+use crate::defines::{PAGE, PAGE_MASK};
 use crate::heap::{Anchor, Descriptor, ProcHeap, SbState};
 use crate::log_debug;
+use crate::pagemap::{PageInfo, SPAGEMAP};
 use crate::pages::page_alloc;
-use crate::size_classes::{init_size_class, get_size_class, MAX_SZ_IDX, SIZE_CLASSES, MAX_SZ};
+use crate::size_classes::{get_size_class, init_size_class, MAX_SZ, MAX_SZ_IDX, SIZE_CLASSES};
 use crate::tcache::{TCacheBin, TCACHE};
 use atomic::Ordering;
-use likely_stable::unlikely;
+use likely_stable::{likely, unlikely};
 
 static mut MALLOC_INIT: bool = false;
 
@@ -12,6 +14,37 @@ static mut MALLOC_INIT: bool = false;
 // Details here: https://rust-lang.github.io/rfcs/2203-const-repeat-expr.html
 const PROC_HEAP_INITIALIZER: ProcHeap = ProcHeap::const_new(0);
 pub static mut HEAPS: [ProcHeap; MAX_SZ_IDX] = [PROC_HEAP_INITIALIZER; MAX_SZ_IDX];
+
+fn update_page_map(heap: Option<&ProcHeap>, ptr: *mut u8, desc: &mut Descriptor, sc_idx: usize) {
+    assert!(!ptr.is_null());
+
+    let mut info = PageInfo::new();
+    info.set(desc as *mut Descriptor, sc_idx);
+
+    match heap {
+        Some(h) => {
+            let sb_size = h.get_size_class().get_sb_size();
+            assert_eq!((sb_size as usize) & PAGE_MASK, 0);
+            for i in (0..sb_size).step_by(PAGE) {
+                unsafe { SPAGEMAP.set_page_info(info, ptr.offset(i as isize)) }
+            }
+        }
+        None => {
+            unsafe { SPAGEMAP.set_page_info(info, ptr) };
+        }
+    }
+}
+
+fn register_desc<'a>(desc: &'a mut Descriptor<'a>) {
+    let heap = desc.get_heap();
+    let ptr = desc.get_superblock();
+    let mut sc_idx = 0;
+    if likely(!heap.is_null()) {
+        sc_idx = unsafe { (*heap).get_sc_idx() };
+    }
+
+    update_page_map(unsafe { Some(&*heap) }, ptr, desc, sc_idx);
+}
 
 fn init_malloc() {
     log_debug!();
@@ -24,7 +57,8 @@ fn init_malloc() {
     // init size classes
     init_size_class();
 
-    // FIXME: init page map
+    // init page map
+    unsafe { SPAGEMAP.init() };
 
     // init heaps
     unsafe {
@@ -35,7 +69,7 @@ fn init_malloc() {
 }
 
 fn malloc_from_new_sb(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -> usize {
-    let heap = unsafe { &HEAPS[sc_idx] };
+    let heap = unsafe { &mut HEAPS[sc_idx] };
     let sc = unsafe { &SIZE_CLASSES[sc_idx] };
     let desc = Descriptor::alloc();
     let block_size = sc.get_block_size();
@@ -71,8 +105,8 @@ fn malloc_from_new_sb(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) ->
     assert!(anchor.get_avail() < maxcount || anchor.get_state() == SbState::Full);
     assert!(anchor.get_count() < maxcount);
 
-    // FIXME: register_desc(desc)
-    // FIXME: assert_eq!(anchor.get_state() == SbState::Full)
+    register_desc(desc);
+    assert!(anchor.get_state() == SbState::Full);
 
     block_num + maxcount as usize
 }

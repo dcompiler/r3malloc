@@ -98,8 +98,8 @@ pub struct Descriptor<'a> {
     next_partial: Atomic<Option<DescriptorNode<'a>>>,
 
     anchor: Atomic<Anchor>,
-    superblock: &'a mut u8,
-    heap: &'a ProcHeap<'a>,
+    superblock: *mut u8,
+    heap: *mut ProcHeap<'a>,
     block_size: u32,
     maxcount: u32,
 }
@@ -119,15 +119,15 @@ impl<'a> Descriptor<'a> {
         &self.anchor
     }
 
-    pub fn get_superblock(&'a mut self) -> &'a mut u8 {
+    pub fn get_superblock(&self) -> *mut u8 {
         self.superblock
     }
 
-    pub fn get_heap(&self) -> &'a ProcHeap {
+    pub fn get_heap(&self) -> *mut ProcHeap<'a> {
         self.heap
     }
 
-    pub fn set_heap(&mut self, heap: &'a ProcHeap<'a>) {
+    pub fn set_heap(&mut self, heap: *mut ProcHeap<'a>) {
         self.heap = heap
     }
 

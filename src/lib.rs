@@ -28,8 +28,8 @@ pub extern "C" fn test() -> u32 {
 }
 
 #[no_mangle]
-pub extern "C" fn malloc(size: usize) -> *mut u8 {
-    r3malloc::do_malloc(size)
+pub extern "C" fn malloc(size: usize) -> *mut libc::c_void {
+    r3malloc::do_malloc(size) as *mut libc::c_void
 }
 
 use core::panic::PanicInfo;
