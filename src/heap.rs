@@ -1,4 +1,4 @@
-use crate::defines::{PAGE, CACHELINE_MASK};
+use crate::defines::{CACHELINE_MASK, PAGE};
 use crate::pages::page_alloc;
 use crate::size_classes::{SizeClassData, SIZE_CLASSES};
 use atomic::{Atomic, Ordering};

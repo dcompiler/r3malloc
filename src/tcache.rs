@@ -54,6 +54,6 @@ impl TCacheBin {
 }
 
 pub static mut TCACHE: [TCacheBin; MAX_SZ_IDX] = [TCacheBin {
-            block: null_mut(),
-            block_num: 0,
-        }; MAX_SZ_IDX];
+    block: null_mut(),
+    block_num: 0,
+}; MAX_SZ_IDX];

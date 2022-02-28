@@ -4,6 +4,7 @@
 mod defines;
 mod heap;
 mod log;
+mod pagemap;
 mod pages;
 mod r3malloc;
 mod size_classes;
