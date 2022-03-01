@@ -1,4 +1,4 @@
-use crate::defines::{CACHELINE_MASK, PAGE};
+use crate::defines::{align_addr, CACHELINE, CACHELINE_MASK, PAGE};
 use crate::pages::page_alloc;
 use crate::size_classes::{SizeClassData, SIZE_CLASSES};
 use atomic::{Atomic, Ordering};
@@ -185,7 +185,7 @@ impl<'a> Descriptor<'a> {
 
                     let mut curr_ptr: *mut u8 =
                         unsafe { ptr.offset(size_of::<Descriptor>() as isize) };
-                    // FIXME: currPtr = ALIGN_ADDR(currPtr, CACHELINE);
+                    curr_ptr = align_addr(curr_ptr, CACHELINE);
                     let first: *mut Descriptor = curr_ptr as *mut Descriptor;
                     let mut prev: *mut Descriptor = null_mut();
 
@@ -205,7 +205,7 @@ impl<'a> Descriptor<'a> {
 
                         prev = curr;
                         curr_ptr = unsafe { curr_ptr.offset(size_of::<Descriptor>() as isize) };
-                        // FIXME: currPtr = ALIGN_ADDR(currPtr, CACHELINE);
+                        curr_ptr = align_addr(curr_ptr, CACHELINE);
                     }
 
                     unsafe { (*prev).get_next_free().store(None, Ordering::SeqCst) };
