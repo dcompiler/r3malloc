@@ -2,8 +2,10 @@ use crate::defines::{page_ceiling, PAGE, PAGE_MASK};
 use crate::heap::{Anchor, Descriptor, ProcHeap, SbState};
 use crate::log_debug;
 use crate::pagemap::{PageInfo, SPAGEMAP};
-use crate::pages::page_alloc;
-use crate::size_classes::{get_size_class, init_size_class, MAX_SZ, MAX_SZ_IDX, SIZE_CLASSES};
+use crate::pages::{page_alloc, page_free};
+use crate::size_classes::{
+    compute_idx, get_size_class, init_size_class, MAX_SZ, MAX_SZ_IDX, SIZE_CLASSES,
+};
 use crate::tcache::{TCacheBin, TCACHE};
 use atomic::Ordering;
 use core::ptr::null_mut;
@@ -16,11 +18,19 @@ static mut MALLOC_INIT: bool = false;
 const PROC_HEAP_INITIALIZER: ProcHeap = ProcHeap::const_new(0);
 pub static mut HEAPS: [ProcHeap; MAX_SZ_IDX] = [PROC_HEAP_INITIALIZER; MAX_SZ_IDX];
 
-fn update_page_map(heap: Option<&ProcHeap>, ptr: *mut u8, desc: &mut Descriptor, sc_idx: usize) {
+fn update_page_map(
+    heap: Option<&ProcHeap>,
+    ptr: *mut u8,
+    desc: Option<&mut Descriptor>,
+    sc_idx: usize,
+) {
     assert!(!ptr.is_null());
 
     let mut info = PageInfo::new();
-    info.set_desc(desc as *mut Descriptor, sc_idx);
+    match desc {
+        Some(d) => info.set_desc(d as *mut Descriptor, sc_idx),
+        None => info.set_desc(null_mut(), sc_idx),
+    }
 
     match heap {
         Some(h) => {
@@ -44,7 +54,11 @@ fn register_desc(desc: &mut Descriptor) {
         sc_idx = unsafe { (*heap).get_sc_idx() };
     }
 
-    update_page_map(unsafe { Some(&*heap) }, ptr, desc, sc_idx);
+    update_page_map(unsafe { Some(&*heap) }, ptr, Some(desc), sc_idx);
+}
+
+fn unregister_desc(heap: &ProcHeap, superblock: *mut u8) {
+    update_page_map(Some(heap), superblock, None, 0);
 }
 
 fn init_malloc() {
@@ -124,6 +138,95 @@ fn fill_cache(sc_idx: usize, cache: &mut TCacheBin) {
     let sc = unsafe { &SIZE_CLASSES[sc_idx] };
     assert!(block_num > 0);
     assert!(block_num <= sc.get_cache_block_num() as usize);
+}
+
+fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
+    let heap = unsafe { &HEAPS[sc_idx] };
+    let sc = unsafe { &SIZE_CLASSES[sc_idx] };
+    let sb_size = sc.get_sb_size();
+    let block_size = sc.get_block_size();
+    let maxcount = sc.get_block_num();
+
+    while cache.get_block_num() > 0 {
+        let head = cache.peek_block();
+        let mut tail = head;
+        let info = unsafe { SPAGEMAP.get_page_info(head) };
+        let desc = info.get_desc();
+        let superblock = unsafe { (*desc).get_superblock() };
+        let mut block_count = 1;
+
+        while cache.get_block_num() > block_count {
+            let ptr: *mut u8 = unsafe { *(tail as *mut *mut u8) };
+            if unsafe {
+                ptr.offset_from(superblock) < 0
+                    || ptr.offset_from(superblock.offset(sb_size as isize)) >= 0
+            } {
+                break;
+            }
+
+            block_count += 1;
+            tail = ptr;
+        }
+
+        cache.pop_list(unsafe { *(tail as *mut *mut u8) }, block_count);
+
+        let idx = compute_idx(superblock, head, sc_idx);
+
+        let old_anchor = unsafe { (*desc).get_anchor().load(Ordering::SeqCst) };
+        let mut new_anchor;
+
+        loop {
+            let next: *mut u8 =
+                unsafe { superblock.offset((old_anchor.get_avail() * block_size) as isize) };
+            unsafe {
+                *(tail as *mut *mut u8) = next;
+            }
+
+            new_anchor = old_anchor;
+            new_anchor.set_avail(idx);
+
+            if old_anchor.get_state() == SbState::Full {
+                new_anchor.set_state(SbState::Partial);
+            }
+
+            assert!(unsafe { old_anchor.get_count() < (*desc).get_maxcount() });
+            if unsafe { old_anchor.get_count() + block_count == (*desc).get_maxcount() } {
+                new_anchor.set_count(unsafe { (*desc).get_maxcount() - 1 });
+                new_anchor.set_state(SbState::Empty);
+            } else {
+                new_anchor.set_count(new_anchor.get_count() + block_count);
+            }
+
+            match unsafe {
+                (*desc).get_anchor().compare_exchange_weak(
+                    old_anchor,
+                    new_anchor,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+            } {
+                Ok(_) => {
+                    break;
+                }
+                _ => (),
+            }
+        }
+
+        assert!(old_anchor.get_avail() < maxcount || old_anchor.get_state() == SbState::Full);
+        assert!(new_anchor.get_avail() < maxcount);
+        assert!(new_anchor.get_count() < maxcount);
+
+        if new_anchor.get_state() == SbState::Empty {
+            unregister_desc(heap, superblock);
+
+            unsafe {
+                page_free(superblock, heap.get_size_class().get_sb_size() as usize);
+            }
+        } else if old_anchor.get_state() == SbState::Full {
+            // FIXME: push partial on heap
+            todo!();
+        }
+    }
 }
 
 pub fn do_malloc(size: usize) -> *mut u8 {
