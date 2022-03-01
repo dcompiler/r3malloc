@@ -243,6 +243,37 @@ impl<'a> Descriptor<'a> {
             };
         }
     }
+
+    pub fn retire(&'static mut self) {
+        self.block_size = 0;
+        let old_head = unsafe { AVAIL_DESC.load(Ordering::SeqCst) };
+        let mut new_head: Option<DescriptorNode> = None;
+        loop {
+            self.get_next_free().store(old_head, Ordering::SeqCst);
+            match new_head {
+                Some(mut d) => {
+                    d.set_desc(self, old_head.unwrap().get_counter() + 1);
+                }
+                None => {
+                    new_head = Some(DescriptorNode::new(self));
+                }
+            }
+
+            unsafe {
+                match AVAIL_DESC.compare_exchange_weak(
+                    old_head,
+                    new_head,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                ) {
+                    Ok(_) => {
+                        break;
+                    }
+                    _ => (),
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
