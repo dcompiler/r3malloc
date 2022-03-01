@@ -19,6 +19,10 @@ impl TCacheBin {
         self.block_num
     }
 
+    pub fn peek_block(&self) -> *mut u8 {
+        self.block
+    }
+
     #[inline(always)]
     pub fn push_block(&mut self, block: *mut u8) {
         unsafe { *(block as *mut *mut u8) = self.block };

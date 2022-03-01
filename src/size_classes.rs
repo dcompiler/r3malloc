@@ -59,6 +59,36 @@ fn size_class_filter_init(
     }
 }
 
+pub fn compute_idx(superblock: *mut u8, block: *mut u8, sc_idx: usize) -> u32 {
+    let sc = unsafe { &SIZE_CLASSES[sc_idx] };
+    let sc_block_size = sc.get_block_size();
+
+    assert!(unsafe { block.offset_from(superblock) >= 0 });
+    assert!(unsafe { block.offset_from(superblock.offset(sc.get_sb_size() as isize)) < 0 });
+
+    let diff = unsafe { block.offset_from(superblock) } as u32;
+    for size_class in SIZE_CLASSES_TABLE {
+        match size_class.5 {
+            SizeClassOpt::Yes => {
+                let index = size_class.0 as usize + 1;
+                if index == sc_idx {
+                    let block_size =
+                        ((1 as usize) << size_class.1) + ((size_class.3 << size_class.2) as usize);
+
+                    assert_eq!(sc_block_size as usize, block_size);
+                    let idx = diff / (block_size as u32);
+                    assert_eq!(diff / sc_block_size, idx);
+
+                    return idx;
+                }
+            }
+            SizeClassOpt::No => (),
+        }
+    }
+
+    panic!("Unreachable");
+}
+
 fn size_classes() -> [SizeClassData; MAX_SZ_IDX] {
     let mut size_classes = [SizeClassData {
         block_size: 0,

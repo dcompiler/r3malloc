@@ -37,8 +37,8 @@ pub unsafe fn page_alloc_overcommit<T>(size: usize) -> *mut T {
     ptr as *mut T
 }
 
-pub unsafe fn page_free(ptr: *mut c_void, size: usize) {
+pub unsafe fn page_free(ptr: *mut u8, size: usize) {
     core::assert_eq!(size & PAGE_MASK, 0);
-    let ret = munmap(ptr, size);
+    let ret = munmap(ptr as *mut c_void, size);
     core::assert_eq!(ret, 0);
 }
