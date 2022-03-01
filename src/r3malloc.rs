@@ -1,4 +1,4 @@
-use crate::defines::{PAGE, PAGE_MASK};
+use crate::defines::{page_ceiling, PAGE, PAGE_MASK};
 use crate::heap::{Anchor, Descriptor, ProcHeap, SbState};
 use crate::log_debug;
 use crate::pagemap::{PageInfo, SPAGEMAP};
@@ -6,6 +6,7 @@ use crate::pages::page_alloc;
 use crate::size_classes::{get_size_class, init_size_class, MAX_SZ, MAX_SZ_IDX, SIZE_CLASSES};
 use crate::tcache::{TCacheBin, TCACHE};
 use atomic::Ordering;
+use core::ptr::null_mut;
 use likely_stable::{likely, unlikely};
 
 static mut MALLOC_INIT: bool = false;
@@ -35,7 +36,7 @@ fn update_page_map(heap: Option<&ProcHeap>, ptr: *mut u8, desc: &mut Descriptor,
     }
 }
 
-fn register_desc<'a>(desc: &'a mut Descriptor<'a>) {
+fn register_desc(desc: &mut Descriptor) {
     let heap = desc.get_heap();
     let ptr = desc.get_superblock();
     let mut sc_idx = 0;
@@ -133,7 +134,29 @@ pub fn do_malloc(size: usize) -> *mut u8 {
 
     // large block allocation
     if unlikely(size > MAX_SZ) {
-        todo!();
+        let pages = page_ceiling(size);
+        let desc = Descriptor::alloc();
+        // FIXME: ASSERT(desc); should we check for this???
+
+        desc.set_heap(null_mut());
+        desc.set_block_size(pages as u32);
+        desc.set_maxcount(1);
+        unsafe {
+            desc.set_superblock(&mut *page_alloc::<u8>(pages));
+        }
+
+        let mut anchor = Anchor::new();
+        anchor.set_avail(0);
+        anchor.set_count(0);
+        anchor.set_state(SbState::Full);
+
+        desc.get_anchor().store(anchor, Ordering::SeqCst);
+
+        register_desc(desc);
+
+        let ptr = desc.get_superblock();
+        log_debug!("Large, ptr: {}", ptr);
+        return ptr;
     }
 
     let sc_idx = get_size_class(size);
