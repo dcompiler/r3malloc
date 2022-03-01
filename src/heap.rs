@@ -148,7 +148,7 @@ impl<'a> Descriptor<'a> {
         self.maxcount = maxcount
     }
 
-    pub fn set_superblock(&mut self, superblock: &'a mut u8) {
+    pub fn set_superblock(&mut self, superblock: *mut u8) {
         self.superblock = superblock
     }
 

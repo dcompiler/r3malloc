@@ -1,4 +1,4 @@
-use crate::defines::{page_ceiling, PAGE, PAGE_MASK};
+use crate::defines::{align_addr, page_ceiling, PAGE, PAGE_MASK};
 use crate::heap::{Anchor, Descriptor, ProcHeap, SbState};
 use crate::log_debug;
 use crate::pagemap::{PageInfo, SPAGEMAP};
@@ -266,6 +266,75 @@ pub fn do_malloc(size: usize) -> *mut u8 {
 
     let cache = unsafe { &mut TCACHE[sc_idx] };
 
+    if unlikely(cache.get_block_num() == 0) {
+        fill_cache(sc_idx, cache);
+    }
+
+    cache.pop_block()
+}
+
+pub fn do_aligned_alloc(alignment: usize, _size: usize) -> *mut u8 {
+    if unlikely((alignment != 0) && !(alignment & (alignment - 1)) == 0) {
+        return null_mut();
+    }
+    let mut size = _size;
+
+    // FIXME: align size
+
+    assert!(size > 0 && alignment > 0 && size >= alignment);
+
+    // ensure malloc is initialized
+    if unlikely(unsafe { !MALLOC_INIT }) {
+        init_malloc();
+    }
+
+    if unlikely(size > PAGE) {
+        size = core::cmp::max(size, MAX_SZ + 1);
+
+        let need_more_pages = alignment > PAGE;
+        if unlikely(need_more_pages) {
+            size += alignment;
+        }
+
+        let pages = page_ceiling(size);
+        let desc = Descriptor::alloc();
+        // FIXME: ASSERT(desc); should we check for this???
+
+        let mut ptr = unsafe { page_alloc::<u8>(pages) };
+
+        desc.set_heap(null_mut());
+        desc.set_block_size(pages as u32);
+        desc.set_maxcount(1);
+        desc.set_superblock(ptr);
+
+        let mut anchor = Anchor::new();
+        anchor.set_avail(0);
+        anchor.set_count(0);
+        anchor.set_state(SbState::Full);
+
+        desc.get_anchor().store(anchor, Ordering::SeqCst);
+
+        register_desc(desc);
+
+        if unlikely(need_more_pages) {
+            ptr = align_addr(ptr, alignment);
+            assert!(unsafe {
+                ptr.offset(size as isize)
+                    .offset_from(desc.get_superblock().offset(desc.get_block_size() as isize))
+                    <= 0
+            });
+
+            update_page_map(None, ptr, Some(desc), 0);
+        }
+
+        log_debug!("Large, ptr: {}", ptr);
+        return ptr;
+    }
+
+    assert!(size <= PAGE);
+    let sc_idx = get_size_class(size);
+
+    let cache = unsafe { &mut TCACHE[sc_idx] };
     if unlikely(cache.get_block_num() == 0) {
         fill_cache(sc_idx, cache);
     }
