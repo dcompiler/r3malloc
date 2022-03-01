@@ -37,7 +37,7 @@ impl<'a> PageInfo<'a> {
     }
 
     #[inline(always)]
-    pub fn get_desc(&self) -> *mut Descriptor {
+    pub fn get_desc(&self) -> *mut Descriptor<'a> {
         ((self.desc as usize) & SC_MASK) as *mut Descriptor
     }
 
@@ -61,6 +61,7 @@ impl<'a> PageMap<'a> {
             unsafe { from_raw_parts(page_alloc_overcommit::<Atomic<PageInfo<'a>>>(PM_SZ), PM_NUM) };
     }
 
+    #[inline(always)]
     fn addr_to_key(ptr: *mut u8) -> usize {
         ((ptr as usize) >> PM_KEY_SHIFT) & PM_KEY_MASK
     }

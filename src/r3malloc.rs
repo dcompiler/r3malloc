@@ -57,8 +57,8 @@ fn register_desc(desc: &mut Descriptor) {
     update_page_map(unsafe { Some(&*heap) }, ptr, Some(desc), sc_idx);
 }
 
-fn unregister_desc(heap: &ProcHeap, superblock: *mut u8) {
-    update_page_map(Some(heap), superblock, None, 0);
+fn unregister_desc(heap: Option<&ProcHeap>, superblock: *mut u8) {
+    update_page_map(heap, superblock, None, 0);
 }
 
 fn init_malloc() {
@@ -217,7 +217,7 @@ fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
         assert!(new_anchor.get_count() < maxcount);
 
         if new_anchor.get_state() == SbState::Empty {
-            unregister_desc(heap, superblock);
+            unregister_desc(Some(heap), superblock);
 
             unsafe {
                 page_free(superblock, heap.get_size_class().get_sb_size() as usize);
@@ -229,6 +229,7 @@ fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
     }
 }
 
+#[inline(always)]
 pub fn do_malloc(size: usize) -> *mut u8 {
     // ensure malloc is initialized
     if unlikely(unsafe { !MALLOC_INIT }) {
@@ -273,6 +274,7 @@ pub fn do_malloc(size: usize) -> *mut u8 {
     cache.pop_block()
 }
 
+#[inline(always)]
 pub fn do_aligned_alloc(alignment: usize, _size: usize) -> *mut u8 {
     if unlikely((alignment != 0) && !(alignment & (alignment - 1)) == 0) {
         return null_mut();
@@ -340,4 +342,41 @@ pub fn do_aligned_alloc(alignment: usize, _size: usize) -> *mut u8 {
     }
 
     cache.pop_block()
+}
+
+#[inline(always)]
+pub fn do_free(ptr: *mut u8) {
+    let info = unsafe { SPAGEMAP.get_page_info(ptr) };
+    let desc = info.get_desc();
+
+    // FIXME: ASSERT(desc); apparantly can happen with dynamic loading
+
+    let sc_idx = info.get_sc_idx();
+
+    log_debug!("Desc {}, ptr {}", desc, ptr);
+
+    if unlikely(sc_idx == 0) {
+        let superblock = unsafe { (*desc).get_superblock() };
+
+        unregister_desc(None, superblock);
+        if unlikely(ptr != superblock) {
+            unregister_desc(None, ptr);
+        }
+
+        unsafe {
+            page_free(superblock, (*desc).get_block_size() as usize);
+            (*desc).retire();
+        }
+
+        return;
+    }
+
+    let cache = unsafe { &mut TCACHE[sc_idx] };
+    let sc = unsafe { &SIZE_CLASSES[sc_idx] };
+
+    if unlikely(cache.get_block_num() >= sc.get_cache_block_num()) {
+        flush_cache(sc_idx, cache);
+    }
+
+    cache.push_block(ptr);
 }

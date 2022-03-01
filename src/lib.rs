@@ -32,6 +32,11 @@ pub extern "C" fn malloc(size: usize) -> *mut libc::c_void {
     r3malloc::do_malloc(size) as *mut libc::c_void
 }
 
+#[no_mangle]
+pub extern "C" fn free(ptr: *mut libc::c_void) {
+    r3malloc::do_free(ptr as *mut u8)
+}
+
 use core::panic::PanicInfo;
 
 // Called on panic
