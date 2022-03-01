@@ -20,7 +20,7 @@ fn update_page_map(heap: Option<&ProcHeap>, ptr: *mut u8, desc: &mut Descriptor,
     assert!(!ptr.is_null());
 
     let mut info = PageInfo::new();
-    info.set(desc as *mut Descriptor, sc_idx);
+    info.set_desc(desc as *mut Descriptor, sc_idx);
 
     match heap {
         Some(h) => {

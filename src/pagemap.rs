@@ -29,7 +29,7 @@ impl<'a> PageInfo<'a> {
     }
 
     #[inline(always)]
-    pub fn set(&mut self, desc: *mut Descriptor, sc_idx: usize) {
+    pub fn set_desc(&mut self, desc: *mut Descriptor, sc_idx: usize) {
         assert_eq!((desc as usize) & SC_MASK, 0);
         assert!(sc_idx < MAX_SZ_IDX);
 

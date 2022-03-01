@@ -77,12 +77,13 @@ impl<'a> DescriptorNode<'a> {
     }
 
     pub fn set_desc(&mut self, desc: *mut Descriptor<'a>, counter: usize) {
-        // todo: make sure desc is cacheline aligned
-        self.desc = desc;
+        assert_eq!((desc as usize) & CACHELINE_MASK, 0);
+
+        self.desc = ((desc as usize) | (counter & CACHELINE_MASK)) as *mut Descriptor
     }
 
     pub fn get_desc(&self) -> *mut Descriptor<'a> {
-        self.desc
+        ((self.desc as usize) & !CACHELINE_MASK) as *mut Descriptor
     }
 
     pub fn get_counter(&self) -> usize {
