@@ -1,5 +1,5 @@
 use crate::defines::{align_addr, page_ceiling, PAGE, PAGE_MASK};
-use crate::heap::{Anchor, Descriptor, ProcHeap, SbState};
+use crate::heap::{Anchor, Descriptor, DescriptorNode, ProcHeap, SbState};
 use crate::log_debug;
 use crate::pagemap::{PageInfo, SPAGEMAP};
 use crate::pages::{page_alloc, page_free};
@@ -61,7 +61,55 @@ fn unregister_desc(heap: Option<&ProcHeap>, superblock: *mut u8) {
     update_page_map(heap, superblock, None, 0);
 }
 
-fn init_malloc() {
+pub fn heap_pop_partial<'a>(heap: &ProcHeap<'a>) -> *mut Descriptor<'a> {
+    let list = heap.get_partial_list();
+    let old_head = list.load(Ordering::SeqCst);
+
+    loop {
+        let old_desc = old_head.get_desc();
+        if old_desc.is_null() {
+            return null_mut();
+        }
+        let mut new_head = unsafe { (*old_desc).get_next_partial().load(Ordering::SeqCst) };
+        let desc = new_head.get_desc();
+        let counter = old_head.get_counter();
+        new_head.set_desc(desc, counter);
+
+        match list.compare_exchange_weak(old_head, new_head, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => {
+                break;
+            }
+            _ => (),
+        }
+    }
+
+    old_head.get_desc()
+}
+
+pub fn heap_push_partial(desc: *mut Descriptor) {
+    let list = unsafe { (*(*desc).get_heap()).get_partial_list() };
+    let old_head = list.load(Ordering::SeqCst);
+    let mut new_head = DescriptorNode::new(null_mut());
+
+    loop {
+        new_head.set_desc(desc, old_head.get_counter() + 1);
+        // FIXME: ASSERT(oldHead.GetDesc() != newHead.GetDesc());
+        unsafe {
+            (*new_head.get_desc())
+                .get_next_partial()
+                .store(old_head, Ordering::SeqCst)
+        };
+
+        match list.compare_exchange_weak(old_head, new_head, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => {
+                break;
+            }
+            _ => (),
+        }
+    }
+}
+
+pub fn init_malloc() {
     log_debug!();
 
     // hard assumption that this can't be called concurrently
@@ -82,6 +130,10 @@ fn init_malloc() {
         }
     }
 }
+
+// fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -> usize {
+//     todo!();
+// }
 
 fn malloc_from_new_sb(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -> usize {
     let heap = unsafe { &mut HEAPS[sc_idx] };
@@ -223,8 +275,7 @@ fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
                 page_free(superblock, heap.get_size_class().get_sb_size() as usize);
             }
         } else if old_anchor.get_state() == SbState::Full {
-            // FIXME: push partial on heap
-            todo!();
+            heap_push_partial(desc);
         }
     }
 }

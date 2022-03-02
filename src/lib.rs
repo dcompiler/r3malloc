@@ -24,6 +24,28 @@ pub extern "C" fn test() -> u32 {
     libc_println!("Hello from Rust: {}", anch.get_avail());
     let _dummy = heap::Descriptor::alloc();
     let _dummy2 = heap::Descriptor::alloc();
+
+    use heap::Descriptor;
+    use r3malloc::{heap_pop_partial, heap_push_partial, init_malloc, HEAPS};
+    init_malloc();
+
+    // test heap push/pop
+    let heap = unsafe { &mut HEAPS[1] };
+    let mut stuff: *mut Descriptor = heap_pop_partial(heap);
+    let list = heap.get_partial_list();
+    libc_println!("\ninitial list of heap: {:?}\n", list);
+    _dummy.set_heap(heap);
+    _dummy.set_block_size(10);
+    _dummy.set_maxcount(20);
+    libc_println!("desc to add: {:?}\n", _dummy);
+    libc_println!("1st pop is null: {}\n", stuff.is_null());
+    heap_push_partial(_dummy);
+    stuff = heap_pop_partial(heap);
+    libc_println!("2nd pop is null: {}", stuff.is_null());
+    libc_println!("2nd pop object: {:?}\n", unsafe { &mut *stuff });
+    stuff = heap_pop_partial(heap);
+    libc_println!("3rd pop is null: {}\n", stuff.is_null());
+
     anch.get_avail()
 }
 
