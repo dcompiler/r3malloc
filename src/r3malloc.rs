@@ -131,9 +131,74 @@ pub fn init_malloc() {
     }
 }
 
-// fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -> usize {
-//     todo!();
-// }
+fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -> usize {
+    let heap = unsafe { &HEAPS[sc_idx] };
+
+    let desc = heap_pop_partial(heap);
+    if desc.is_null() {
+        return 0;
+    }
+
+    // reserve blocks
+    let old_anchor = unsafe { (*desc).get_anchor().load(Ordering::SeqCst) };
+    let max_count = unsafe { (*desc).get_maxcount() };
+    let block_size = unsafe { (*desc).get_block_size() };
+    let superblock: *mut u8 = unsafe { (*desc).get_superblock() };
+
+    loop {
+        if old_anchor.get_state() == SbState::Empty {
+            unsafe { (*desc).retire() }
+            // retry
+            return malloc_from_partial(sc_idx, cache, block_num);
+        }
+
+        // oldAnchor must be SB_PARTIAL
+        // can't be SB_FULL because we *own* the block now
+        // and it came from HeapPopPartial
+        // can't be SB_EMPTY, we already checked
+        // obviously can't be SB_ACTIVE
+        assert_eq!(old_anchor.get_state(), SbState::Partial);
+
+        let mut new_anchor = old_anchor;
+        new_anchor.set_count(0);
+        // avail value doesn't actually matter
+        new_anchor.set_avail(max_count);
+        new_anchor.set_state(SbState::Full);
+
+        match unsafe {
+            (*desc).get_anchor().compare_exchange_weak(
+                old_anchor,
+                new_anchor,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+        } {
+            Ok(_) => {
+                break;
+            }
+            _ => (),
+        }
+    }
+
+    // will take as many blocks as available from superblock
+    // *AND* no thread can do malloc() using this superblock, we
+    //  exclusively own it
+    // if CAS fails, it just means another thread added more available blocks
+    //  through FlushCache, which we can then use
+    let blocks_taken = old_anchor.get_count();
+    let avail = old_anchor.get_avail();
+
+    // FIXME: ASSERT(avail < maxcount);
+    let block = unsafe { superblock.offset((avail * block_size) as isize) };
+
+    // cache must be empty at this point
+    // and the blocks are already organized as a list
+    // so all we need do is "push" that list, a constant time op
+    // FIXME: ASSERT(cache->GetBlockNum() == 0);
+    cache.push_list(block, blocks_taken);
+
+    block_num + blocks_taken as usize
+}
 
 fn malloc_from_new_sb(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -> usize {
     let heap = unsafe { &mut HEAPS[sc_idx] };
@@ -181,7 +246,7 @@ fn malloc_from_new_sb(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) ->
 fn fill_cache(sc_idx: usize, cache: &mut TCacheBin) {
     let mut block_num = 0;
 
-    // FIXME: malloc from partial sb
+    block_num = malloc_from_partial(sc_idx, cache, block_num);
 
     if block_num == 0 {
         block_num = malloc_from_new_sb(sc_idx, cache, block_num);
