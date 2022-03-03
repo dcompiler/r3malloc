@@ -9,7 +9,7 @@ pub const MAX_BLOCK_NUM: u64 = (2 as u64) << LG_MAX_BLOCK_NUM;
 
 pub const DESCRIPTOR_BLOCK_SZ: usize = 16 * PAGE;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum SbState {
     Full,
     Partial,
