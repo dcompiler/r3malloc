@@ -16,7 +16,7 @@ macro_rules! function {
 macro_rules! log_debug {
     ( $( $x: expr ), * ) => {{
         use libc_print::{libc_println, libc_print};
-        libc_print!("{:?}:{:?} {:?}", core::file!(), core::line!(), crate::function!());
+        libc_print!("{:?}: {:?} {:?}", core::file!(), core::line!(), crate::function!());
         $(
             libc_print!(" {:?}", $x);
         )*

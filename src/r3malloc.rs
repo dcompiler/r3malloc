@@ -397,6 +397,10 @@ pub fn do_aligned_alloc(alignment: usize, _size: usize) -> *mut u8 {
 
 #[inline(always)]
 pub fn do_free(ptr: *mut u8) {
+    if unlikely(ptr.is_null()) {
+        return;
+    }
+
     let info = unsafe { SPAGEMAP.get_page_info(ptr) };
     let desc = info.get_desc();
 
@@ -404,7 +408,7 @@ pub fn do_free(ptr: *mut u8) {
 
     let sc_idx = info.get_sc_idx();
 
-    log_debug!("Desc {}, ptr {}", desc, ptr);
+    log_debug!("Desc ", desc, ", ptr ", ptr);
 
     if unlikely(sc_idx == 0) {
         let superblock = unsafe { (*desc).get_superblock() };
