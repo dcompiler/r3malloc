@@ -149,7 +149,7 @@ fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -
         if old_anchor.get_state() == SbState::Empty {
             unsafe { (*desc).retire() }
             // retry
-            return malloc_from_partial(sc_idx, cache, block_num)
+            return malloc_from_partial(sc_idx, cache, block_num);
         }
 
         // oldAnchor must be SB_PARTIAL
@@ -165,9 +165,18 @@ fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -
         new_anchor.set_avail(max_count);
         new_anchor.set_state(SbState::Full);
 
-        match unsafe { (*desc).get_anchor().compare_exchange_weak(old_anchor, new_anchor, Ordering::SeqCst, Ordering::SeqCst) } {
-            Ok(_) => { break; }
-            _ => ()
+        match unsafe {
+            (*desc).get_anchor().compare_exchange_weak(
+                old_anchor,
+                new_anchor,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+        } {
+            Ok(_) => {
+                break;
+            }
+            _ => (),
         }
     }
 
