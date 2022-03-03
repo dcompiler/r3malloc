@@ -1,5 +1,10 @@
 #![no_std] // Disables Rust heap
 #![allow(dead_code)] // FIXME: have it here so there's no warning spam
+#![feature(thread_local)]
+#![feature(lang_items)]
+
+#[lang = "eh_personality"]
+extern "C" fn eh_personality() {}
 
 mod defines;
 mod heap;
