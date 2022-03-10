@@ -16,6 +16,7 @@ use likely_stable::{likely, unlikely};
 use core::ptr::{null_mut, copy};
 use core::slice;
 use pagemap::SPAGEMAP;
+use size_classes::{SIZE_CLASSES, SIZE_CLASS_LOOKUP};
 
 extern crate libc;
 
@@ -113,6 +114,26 @@ pub extern "C" fn realloc(ptr: *mut libc::c_void, size: usize) -> *mut libc::c_v
     }
 
     return new_ptr;
+}
+
+#[no_mangle]
+pub extern "C" fn malloc_usable_size(ptr: *mut libc::c_void) -> usize {
+    if unlikely(ptr.is_null()) {
+        return 0
+    }
+
+    let info = unsafe { SPAGEMAP.get_page_info(ptr as *mut u8) };
+
+    let sc_idx = info.get_sc_idx();
+    // large allocation case
+    if unlikely(sc_idx == 0) {
+        let desc = info.get_desc();
+        assert!(!desc.is_null());
+        return unsafe { (&*desc).get_block_size() as usize };
+    }
+
+    let sc = unsafe { &SIZE_CLASSES[sc_idx] };
+    sc.get_block_size() as usize
 }
 
 use core::panic::PanicInfo;
