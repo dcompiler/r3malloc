@@ -12,6 +12,9 @@ mod tcache;
 
 use heap::Anchor;
 use libc_print::libc_println;
+use likely_stable::{likely, unlikely};
+use core::ptr::null_mut;
+use core::slice;
 
 extern crate libc;
 
@@ -57,6 +60,28 @@ pub extern "C" fn malloc(size: usize) -> *mut libc::c_void {
 #[no_mangle]
 pub extern "C" fn free(ptr: *mut libc::c_void) {
     r3malloc::do_free(ptr as *mut u8)
+}
+
+#[no_mangle]
+pub extern "C" fn calloc(n: usize, size: usize) -> *mut libc::c_void {
+    let alloc_size = n * size;
+
+    // overflow check
+    // @todo: expensive, need to optimize
+    if unlikely(n == 0 || alloc_size / n != size) {
+        return null_mut();
+    }
+
+    let ptr = r3malloc::do_malloc(alloc_size);
+
+    // calloc returns zero-filled memory
+    // @todo: optimize, memory may be already zero-filled
+    //  if coming directly from OS
+    if likely(ptr != null_mut()) {
+        unsafe { slice::from_raw_parts_mut(ptr, alloc_size).fill(0x0); }
+    }
+
+    ptr as *mut libc::c_void
 }
 
 use core::panic::PanicInfo;
