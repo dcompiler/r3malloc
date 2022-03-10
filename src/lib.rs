@@ -13,8 +13,9 @@ mod tcache;
 use heap::Anchor;
 use libc_print::libc_println;
 use likely_stable::{likely, unlikely};
-use core::ptr::null_mut;
+use core::ptr::{null_mut, copy};
 use core::slice;
+use pagemap::SPAGEMAP;
 
 extern crate libc;
 
@@ -82,6 +83,36 @@ pub extern "C" fn calloc(n: usize, size: usize) -> *mut libc::c_void {
     }
 
     ptr as *mut libc::c_void
+}
+
+#[no_mangle]
+pub extern "C" fn realloc(ptr: *mut libc::c_void, size: usize) -> *mut libc::c_void {
+    let mut block_size = 0;
+
+    if likely(!ptr.is_null()) {
+        let info = unsafe { SPAGEMAP.get_page_info(ptr as *mut u8) };
+        let desc = info.get_desc();
+        assert!(!desc.is_null());
+
+        block_size = unsafe { (& *desc).get_block_size() };
+
+        if unlikely(size == 0) {
+            r3malloc::do_free(ptr as *mut u8);
+            return null_mut();
+        }
+
+        if unlikely(size <= block_size as usize) {
+            return ptr;
+        }
+    }
+
+    let new_ptr = r3malloc::do_malloc(size) as *mut libc::c_void;
+    if likely(!ptr.is_null() && !new_ptr.is_null()) {
+        unsafe { copy(ptr, new_ptr, block_size as usize) };
+        r3malloc::do_free(ptr as *mut u8);
+    }
+
+    return new_ptr;
 }
 
 use core::panic::PanicInfo;
