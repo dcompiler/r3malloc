@@ -38,7 +38,7 @@ impl<'a> PageInfo<'a> {
 
     #[inline(always)]
     pub fn get_desc(&self) -> *mut Descriptor<'a> {
-        ((self.desc as usize) & SC_MASK) as *mut Descriptor
+        ((self.desc as usize) & !SC_MASK) as *mut Descriptor
     }
 
     #[inline(always)]
