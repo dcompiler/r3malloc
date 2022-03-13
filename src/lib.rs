@@ -16,7 +16,8 @@ use likely_stable::{likely, unlikely};
 use core::ptr::{null_mut, copy};
 use core::slice;
 use pagemap::SPAGEMAP;
-use size_classes::{SIZE_CLASSES, SIZE_CLASS_LOOKUP};
+use size_classes::SIZE_CLASSES;
+use defines::PTR_MASK;
 
 extern crate libc;
 
@@ -134,6 +135,31 @@ pub extern "C" fn malloc_usable_size(ptr: *mut libc::c_void) -> usize {
 
     let sc = unsafe { &SIZE_CLASSES[sc_idx] };
     sc.get_block_size() as usize
+}
+
+#[inline(always)]
+fn is_power_of_two(x: usize) -> bool {
+    // https://stackoverflow.com/questions/3638431/determine-if-an-int-is-a-power-of-2-or-not-in-a-single-line
+    (x != 0) && (!(x & (x - 1)) != 0)
+}
+
+#[no_mangle]
+pub extern "C" fn posix_memalign(memptr: *mut *mut libc::c_void, alignment: usize, size: usize) -> i32 {
+    // "EINVAL - The alignment argument was not a power of two, or
+    //  was not a multiple of sizeof(void *)"
+    if unlikely(!is_power_of_two(alignment) || (alignment & PTR_MASK) != 0) {
+        return libc::EINVAL;
+    }
+
+    let ptr = r3malloc::do_aligned_alloc(alignment, size);
+    if unlikely(ptr.is_null()) {
+        return libc::ENOMEM;
+    }
+
+    assert!(!memptr.is_null());
+    unsafe { *memptr = ptr as *mut libc::c_void; }
+
+    0
 }
 
 use core::panic::PanicInfo;
