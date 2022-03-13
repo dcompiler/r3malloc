@@ -17,7 +17,7 @@ use core::ptr::{null_mut, copy};
 use core::slice;
 use pagemap::SPAGEMAP;
 use size_classes::SIZE_CLASSES;
-use defines::PTR_MASK;
+use defines::{PTR_MASK, PAGE};
 
 extern crate libc;
 
@@ -160,6 +160,26 @@ pub extern "C" fn posix_memalign(memptr: *mut *mut libc::c_void, alignment: usiz
     unsafe { *memptr = ptr as *mut libc::c_void; }
 
     0
+}
+
+#[no_mangle]
+pub extern "C" fn aligned_alloc(alignment: usize, size: usize) -> *mut libc::c_void {
+    r3malloc::do_aligned_alloc(alignment, size) as *mut libc::c_void
+}
+
+#[no_mangle]
+pub extern "C" fn valloc(size: usize) -> *mut libc::c_void {
+    r3malloc::do_aligned_alloc(PAGE, size) as *mut libc::c_void
+}
+
+#[no_mangle]
+pub extern "C" fn memalign(alignment: usize, size: usize) -> *mut libc::c_void {
+    r3malloc::do_aligned_alloc(alignment, size) as *mut libc::c_void
+}
+
+#[no_mangle]
+pub extern "C" fn pvalloc(size: usize) -> *mut libc::c_void {
+    r3malloc::do_aligned_alloc(PAGE, size) as *mut libc::c_void
 }
 
 use core::panic::PanicInfo;
