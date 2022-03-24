@@ -3,6 +3,7 @@ use crate::pages::page_alloc;
 use crate::size_classes::{SizeClassData, SIZE_CLASSES};
 use atomic::{Atomic, Ordering};
 use core::{mem::size_of, ptr::null_mut};
+use c2rust_bitfields::BitfieldStruct;
 
 pub const LG_MAX_BLOCK_NUM: u32 = 31;
 pub const MAX_BLOCK_NUM: u64 = (2 as u64) << LG_MAX_BLOCK_NUM;
@@ -11,56 +12,23 @@ pub const DESCRIPTOR_BLOCK_SZ: usize = 16 * PAGE;
 
 #[derive(PartialEq, Debug)]
 pub enum SbState {
-    Full,
-    Partial,
-    Empty,
+    Full = 0,
+    Partial = 1,
+    Empty = 2,
 }
 
-#[derive(Debug, Clone, Copy)]
+
+#[derive(Debug, Clone, Copy, BitfieldStruct)]
 pub struct Anchor {
-    // state is first 2 bits
-    // avail is next lg_max_block_num (31) bits
-    // count is next lg_max_block_num (31) bits
-    anch: u64,
+    #[bitfield(name = "state", ty = "u32", bits = "0..=1")]
+    #[bitfield(name = "avail", ty = "u32", bits = "2..=32")]
+    #[bitfield(name = "count", ty = "u32", bits = "33..=63")]
+    anch: [u8; 8],
 }
 
 impl Anchor {
-    pub fn new() -> Anchor {
-        Anchor { anch: 0x0 }
-    }
-
-    pub fn set_state(&mut self, state: SbState) {
-        let st: u64 = match state {
-            SbState::Full => 0,
-            SbState::Partial => 1,
-            SbState::Empty => 2,
-        };
-        self.anch = (self.anch & 0x3FFFFFFFFFFFFFFF) | ((st) << 2 * LG_MAX_BLOCK_NUM)
-    }
-
-    pub fn get_state(&self) -> SbState {
-        match self.anch >> 2 * LG_MAX_BLOCK_NUM {
-            0 => SbState::Full,
-            1 => SbState::Partial,
-            2 => SbState::Empty,
-            _ => panic!("Anchor state was not full, partial or empty"),
-        }
-    }
-
-    pub fn set_avail(&mut self, avail: u32) {
-        self.anch = (self.anch & 0xC00000007FFFFFFF) | ((avail as u64) << LG_MAX_BLOCK_NUM)
-    }
-
-    pub fn get_avail(&self) -> u32 {
-        ((self.anch >> LG_MAX_BLOCK_NUM) & 0x07FFFFFFF) as u32
-    }
-
-    pub fn set_count(&mut self, count: u32) {
-        self.anch = (self.anch & 0xFFFFFFFF80000000) | ((count & 0x7FFFFFFF) as u64)
-    }
-
-    pub fn get_count(&self) -> u32 {
-        (self.anch & 0x07FFFFFFF) as u32
+    pub fn new() -> Self {
+        Anchor { anch: [0; 8] }
     }
 }
 

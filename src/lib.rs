@@ -27,7 +27,7 @@ pub extern "C" fn test() -> u32 {
     let mut anch: Anchor = Anchor::new();
 
     anch.set_avail(128);
-    libc_println!("Hello from Rust: {}", anch.get_avail());
+    libc_println!("Hello from Rust: {}", anch.avail());
     let _dummy = heap::Descriptor::alloc();
     let _dummy2 = heap::Descriptor::alloc();
 
@@ -52,7 +52,7 @@ pub extern "C" fn test() -> u32 {
     stuff = heap_pop_partial(heap);
     libc_println!("3rd pop is null: {}\n", stuff.is_null());
 
-    anch.get_avail()
+    anch.avail()
 }
 
 #[no_mangle]

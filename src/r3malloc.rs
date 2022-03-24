@@ -146,7 +146,7 @@ fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -
     let superblock: *mut u8 = unsafe { (*desc).get_superblock() };
 
     loop {
-        if old_anchor.get_state() == SbState::Empty {
+        if old_anchor.state() == SbState::Empty as u32 {
             unsafe { (*desc).retire() }
             // retry
             return malloc_from_partial(sc_idx, cache, block_num);
@@ -157,13 +157,13 @@ fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -
         // and it came from HeapPopPartial
         // can't be SB_EMPTY, we already checked
         // obviously can't be SB_ACTIVE
-        assert_eq!(old_anchor.get_state(), SbState::Partial);
+        assert_eq!(old_anchor.state(), SbState::Partial as u32);
 
         let mut new_anchor = old_anchor;
         new_anchor.set_count(0);
         // avail value doesn't actually matter
         new_anchor.set_avail(max_count);
-        new_anchor.set_state(SbState::Full);
+        new_anchor.set_state(SbState::Full as u32);
 
         match unsafe {
             (*desc).get_anchor().compare_exchange_weak(
@@ -185,8 +185,8 @@ fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -
     //  exclusively own it
     // if CAS fails, it just means another thread added more available blocks
     //  through FlushCache, which we can then use
-    let blocks_taken = old_anchor.get_count();
-    let avail = old_anchor.get_avail();
+    let blocks_taken = old_anchor.count();
+    let avail = old_anchor.avail();
 
     // FIXME: ASSERT(avail < maxcount);
     let block = unsafe { superblock.offset((avail * block_size) as isize) };
@@ -219,7 +219,7 @@ fn malloc_from_new_sb(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) ->
     let mut anchor = Anchor::new();
     anchor.set_avail(maxcount);
     anchor.set_count(0);
-    anchor.set_state(SbState::Full);
+    anchor.set_state(SbState::Full as u32);
     desc.get_anchor().store(anchor, Ordering::SeqCst);
 
     let superblock: *mut u8 = desc.get_superblock() as *mut u8;
@@ -234,11 +234,11 @@ fn malloc_from_new_sb(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) ->
 
     cache.push_list(superblock, maxcount);
 
-    assert!(anchor.get_avail() < maxcount || anchor.get_state() == SbState::Full);
-    assert!(anchor.get_count() < maxcount);
+    assert!(anchor.avail() < maxcount || anchor.state() == SbState::Full as u32);
+    assert!(anchor.count() < maxcount);
 
     register_desc(desc);
-    assert!(anchor.get_state() == SbState::Full);
+    assert!(anchor.state() == SbState::Full as u32);
 
     block_num + maxcount as usize
 }
@@ -294,7 +294,7 @@ fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
 
         loop {
             let next: *mut u8 =
-                unsafe { superblock.offset((old_anchor.get_avail() * block_size) as isize) };
+                unsafe { superblock.offset((old_anchor.avail() * block_size) as isize) };
             unsafe {
                 *(tail as *mut *mut u8) = next;
             }
@@ -302,16 +302,16 @@ fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
             new_anchor = old_anchor;
             new_anchor.set_avail(idx);
 
-            if old_anchor.get_state() == SbState::Full {
-                new_anchor.set_state(SbState::Partial);
+            if old_anchor.state() == SbState::Full as u32 {
+                new_anchor.set_state(SbState::Partial as u32);
             }
 
-            assert!(unsafe { old_anchor.get_count() < (*desc).get_maxcount() });
-            if unsafe { old_anchor.get_count() + block_count == (*desc).get_maxcount() } {
+            assert!(unsafe { old_anchor.count() < (*desc).get_maxcount() });
+            if unsafe { old_anchor.count() + block_count == (*desc).get_maxcount() } {
                 new_anchor.set_count(unsafe { (*desc).get_maxcount() - 1 });
-                new_anchor.set_state(SbState::Empty);
+                new_anchor.set_state(SbState::Empty as u32);
             } else {
-                new_anchor.set_count(new_anchor.get_count() + block_count);
+                new_anchor.set_count(new_anchor.count() + block_count);
             }
 
             match unsafe {
@@ -329,17 +329,17 @@ fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
             }
         }
 
-        assert!(old_anchor.get_avail() < maxcount || old_anchor.get_state() == SbState::Full);
-        assert!(new_anchor.get_avail() < maxcount);
-        assert!(new_anchor.get_count() < maxcount);
+        assert!(old_anchor.avail() < maxcount || old_anchor.state() == SbState::Full as u32);
+        assert!(new_anchor.avail() < maxcount);
+        assert!(new_anchor.count() < maxcount);
 
-        if new_anchor.get_state() == SbState::Empty {
+        if new_anchor.state() == SbState::Empty as u32 {
             unregister_desc(Some(heap), superblock);
 
             unsafe {
                 page_free(superblock, heap.get_size_class().get_sb_size() as usize);
             }
-        } else if old_anchor.get_state() == SbState::Full {
+        } else if old_anchor.state() == SbState::Full as u32 {
             heap_push_partial(desc);
         }
     }
@@ -368,7 +368,7 @@ pub fn do_malloc(size: usize) -> *mut u8 {
         let mut anchor = Anchor::new();
         anchor.set_avail(0);
         anchor.set_count(0);
-        anchor.set_state(SbState::Full);
+        anchor.set_state(SbState::Full as u32);
 
         desc.get_anchor().store(anchor, Ordering::SeqCst);
 
@@ -428,7 +428,7 @@ pub fn do_aligned_alloc(alignment: usize, _size: usize) -> *mut u8 {
         let mut anchor = Anchor::new();
         anchor.set_avail(0);
         anchor.set_count(0);
-        anchor.set_state(SbState::Full);
+        anchor.set_state(SbState::Full as u32);
 
         desc.get_anchor().store(anchor, Ordering::SeqCst);
 
