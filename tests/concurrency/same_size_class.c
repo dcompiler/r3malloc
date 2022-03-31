@@ -13,7 +13,7 @@ void* do_work(void* thread_id) {
     printf("hello from %ld\n", (long) thread_id);
 
     double* stuff;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 10; i++) {
         stuff = (double*) malloc(5 * sizeof(double));
         // printf("stuff pointer: %p\n", (void*) stuff);
         if (stuff == NULL) {
