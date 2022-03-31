@@ -1,4 +1,6 @@
 // Credit to https://stackoverflow.com/questions/38088067/equivalent-of-func-or-function-in-rust
+pub const LOG: bool = false;
+
 #[macro_export]
 macro_rules! function {
     () => {{
@@ -15,12 +17,15 @@ macro_rules! function {
 #[macro_export]
 macro_rules! log_debug {
     ( $( $x: expr ), * ) => {{
-        use libc_print::{libc_println, libc_print};
-        libc_print!("{:?}: {:?} {:?}", core::file!(), core::line!(), crate::function!());
-        $(
-            libc_print!(" {:?}", $x);
-        )*
-        libc_println!();
+        use crate::log::LOG;
+        if LOG {
+            use libc_print::{libc_println, libc_print};
+            libc_print!("{:?}: {:?} {:?}", core::file!(), core::line!(), crate::function!());
+            $(
+                libc_print!(" {:?}", $x);
+            )*
+            libc_println!();
+        }
     }};
 }
 
@@ -33,11 +38,14 @@ macro_rules! log_debug {
 #[macro_export]
 macro_rules! log_err {
     ( $( $x: expr ), * ) => {{
-        use libc_print::{libc_println, libc_print};
-        libc_eprint!("{}:{} {}", core::file!(), core::line!(), crate::function!());
-        $(
-            libc_eprint!(" {}", $x);
-        )*
-        libc_eprintln!();
+        use crate::log::LOG;
+        if LOG {
+            use libc_print::{libc_println, libc_print};
+            libc_eprint!("{}:{} {}", core::file!(), core::line!(), crate::function!());
+            $(
+                libc_eprint!(" {}", $x);
+            )*
+            libc_eprintln!();
+        }
     }};
 }
