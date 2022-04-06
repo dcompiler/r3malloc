@@ -2,12 +2,12 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::hint::spin_loop;
 
-struct Mutex {
+pub struct Mutex {
     lock: AtomicBool,
 }
   
 impl Mutex {
-    fn lock(&mut self) {
+    pub fn acquire(&mut self) {
     	loop {
 	        match self.lock.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Acquire) {
 	        	Ok(_) => {
@@ -20,7 +20,7 @@ impl Mutex {
 	    }
     }
 
-    fn unlock(&mut self) {
+    pub fn release(&mut self) {
         match self.lock.compare_exchange_weak(true, false, Ordering::Acquire, Ordering::Acquire) {
         	Ok(_) => (),
         	Err(_) => (),

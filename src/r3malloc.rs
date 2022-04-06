@@ -19,7 +19,7 @@ const PROC_HEAP_INITIALIZER: ProcHeap = ProcHeap::const_new(0);
 pub static mut HEAPS: [ProcHeap; MAX_SZ_IDX] = [PROC_HEAP_INITIALIZER; MAX_SZ_IDX];
 
 fn update_page_map(
-    heap: Option<&ProcHeap>,
+    heap: Option<&mut ProcHeap>,
     ptr: *mut u8,
     desc: Option<&mut Descriptor>,
     sc_idx: usize,
@@ -54,59 +54,51 @@ fn register_desc(desc: &mut Descriptor) {
         sc_idx = unsafe { (*heap).get_sc_idx() };
     }
 
-    update_page_map(unsafe { Some(&*heap) }, ptr, Some(desc), sc_idx);
+    update_page_map(unsafe { Some(&mut *heap) }, ptr, Some(desc), sc_idx);
 }
 
-fn unregister_desc(heap: Option<&ProcHeap>, superblock: *mut u8) {
+fn unregister_desc(heap: Option<&mut ProcHeap>, superblock: *mut u8) {
     update_page_map(heap, superblock, None, 0);
 }
 
-pub fn heap_pop_partial<'a>(heap: &ProcHeap<'a>) -> *mut Descriptor<'a> {
+pub fn heap_pop_partial<'a>(heap: &mut ProcHeap<'a>) -> *mut Descriptor<'a> {
     let list = heap.get_partial_list();
-    let old_head = list.load(Ordering::SeqCst);
+    list.lock();
+    let old_head = list;
 
-    loop {
-        let old_desc = old_head.get_desc();
-        if old_desc.is_null() {
-            return null_mut();
-        }
-        let mut new_head = unsafe { (*old_desc).get_next_partial().load(Ordering::SeqCst) };
-        let desc = new_head.get_desc();
-        let counter = old_head.get_counter();
-        new_head.set_desc(desc, counter);
-
-        match list.compare_exchange_weak(old_head, new_head, Ordering::SeqCst, Ordering::SeqCst) {
-            Ok(_) => {
-                break;
-            }
-            _ => (),
-        }
+    let old_desc = old_head.get_desc();
+    if old_desc.is_null() {
+        return null_mut();
     }
+    unsafe { (*old_desc).get_next_partial().lock() }
+    let new_head = unsafe { (*old_desc).get_next_partial() };
+    let desc = new_head.get_desc();
+    let counter = old_head.get_counter();
+    new_head.set_desc(desc, counter);
+
+    heap.set_partial_list(*new_head);
+    heap.get_partial_list().unlock();
+    new_head.unlock();
 
     old_head.get_desc()
 }
 
 pub fn heap_push_partial(desc: *mut Descriptor) {
     let list = unsafe { (*(*desc).get_heap()).get_partial_list() };
-    let old_head = list.load(Ordering::SeqCst);
-    let mut new_head = DescriptorNode::new(null_mut());
+    list.lock();
+    let old_head = list;
+    let mut new_head = DescriptorNode::new(null_mut(), null_mut());
 
-    loop {
-        new_head.set_desc(desc, old_head.get_counter() + 1);
-        // FIXME: ASSERT(oldHead.GetDesc() != newHead.GetDesc());
-        unsafe {
-            (*new_head.get_desc())
-                .get_next_partial()
-                .store(old_head, Ordering::SeqCst)
-        };
-
-        match list.compare_exchange_weak(old_head, new_head, Ordering::SeqCst, Ordering::SeqCst) {
-            Ok(_) => {
-                break;
-            }
-            _ => (),
-        }
+    new_head.set_desc(desc, old_head.get_counter() + 1);
+    // FIXME: ASSERT(oldHead.GetDesc() != newHead.GetDesc());
+    unsafe {
+        (*new_head.get_desc()).get_next_partial().lock();
+        (*new_head.get_desc()).set_next_partial(*old_head);
     }
+
+    unsafe { (*(*desc).get_heap()).set_partial_list(new_head) };
+    list.unlock();
+    unsafe { (*new_head.get_desc()).get_next_partial().unlock() };
 }
 
 pub fn init_malloc() {
@@ -132,7 +124,7 @@ pub fn init_malloc() {
 }
 
 fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -> usize {
-    let heap = unsafe { &HEAPS[sc_idx] };
+    let heap = unsafe { &mut HEAPS[sc_idx] };
 
     let desc = heap_pop_partial(heap);
     if desc.is_null() {
@@ -258,7 +250,7 @@ fn fill_cache(sc_idx: usize, cache: &mut TCacheBin) {
 }
 
 fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
-    let heap = unsafe { &HEAPS[sc_idx] };
+    let heap = unsafe { &mut HEAPS[sc_idx] };
     let sc = unsafe { &SIZE_CLASSES[sc_idx] };
     let sb_size = sc.get_sb_size();
     let block_size = sc.get_block_size();
