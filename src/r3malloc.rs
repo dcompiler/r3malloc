@@ -383,6 +383,8 @@ pub fn do_malloc(size: usize) -> *mut u8 {
 
     let cache = unsafe { &mut TCACHE[sc_idx] };
 
+    log_debug!("Thread cache: ", cache, " size class", sc_idx);
+
     if unlikely(cache.get_block_num() == 0) {
         fill_cache(sc_idx, cache);
     }
