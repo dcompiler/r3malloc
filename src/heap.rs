@@ -2,8 +2,9 @@ use crate::defines::{align_addr, CACHELINE, CACHELINE_MASK, PAGE};
 use crate::pages::page_alloc;
 use crate::size_classes::{SizeClassData, SIZE_CLASSES};
 use crate::lock::Mutex;
-use atomic::{Atomic, Ordering};
-use core::{mem::size_of, ptr::null_mut};
+use atomic::Atomic;
+use core::{mem::size_of, ptr::null_mut, ops::Deref};
+use core::cell::{Ref, RefCell};
 use c2rust_bitfields::BitfieldStruct;
 
 pub const LG_MAX_BLOCK_NUM: u32 = 31;
@@ -36,15 +37,14 @@ impl Anchor {
 
 #[derive(Clone, Copy, Debug)]
 pub struct DescriptorNode<'a> {
-    lock: *mut Mutex,
     desc: *mut Descriptor<'a>,
 }
 
 // * DescriptorNode needs to always have a valid (non-null) pointer to a Descriptor
 impl<'a> DescriptorNode<'a> {
-    pub fn new(lock: *mut Mutex, desc: *mut Descriptor<'a>) -> Self {
+    pub fn new(desc: *mut Descriptor<'a>) -> Self {
         // todo: make sure desc is cacheline aligned
-        DescriptorNode { lock: lock, desc: desc }
+        DescriptorNode { desc: desc }
     }
 
     pub fn set_desc(&mut self, desc: *mut Descriptor<'a>, counter: usize) {
@@ -59,14 +59,6 @@ impl<'a> DescriptorNode<'a> {
 
     pub fn get_counter(&self) -> usize {
         (self.desc as usize) & CACHELINE_MASK
-    }
-
-    pub fn lock(&self) {
-        unsafe { (*self.lock).acquire() }
-    }
-
-    pub fn unlock(&self) {
-        unsafe { (*self.lock).release() }
     }
 }
 
@@ -84,7 +76,8 @@ pub struct Descriptor<'a> {
     maxcount: u32,
 }
 
-static mut AVAIL_DESC: DescriptorNode = DescriptorNode { lock: null_mut(), desc: null_mut() };
+static mut AVAIL_DESC: DescriptorNode = DescriptorNode { desc: null_mut() };
+pub static mut POOL_LOCK: Mutex = Mutex::new();
 
 impl<'a> Descriptor<'a> {
     pub fn get_next_free(&mut self) -> &mut DescriptorNode<'a> {
@@ -141,20 +134,18 @@ impl<'a> Descriptor<'a> {
 
     // FIXME: not static lifetime?
     pub fn alloc() -> &'static mut Self {
-        unsafe { AVAIL_DESC.lock() };
+        unsafe { POOL_LOCK.acquire() };
         let old_head = unsafe { AVAIL_DESC };
         
         let desc: *mut Descriptor = old_head.get_desc();
         if !desc.is_null() {
-            unsafe { (*desc).get_next_free().lock() };
             let new_head : &mut DescriptorNode<'_> = unsafe { (*desc).get_next_free() };
             new_head.set_desc(new_head.get_desc(), old_head.get_counter());
 
             unsafe {
                 AVAIL_DESC = *new_head;
-                AVAIL_DESC.unlock();
+                POOL_LOCK.release();
             }
-            new_head.unlock();
 
             assert_eq!(unsafe { (*desc).get_block_size() }, 0);
             return unsafe { &mut *desc };
@@ -168,44 +159,34 @@ impl<'a> Descriptor<'a> {
             let first: *mut Descriptor = curr_ptr as *mut Descriptor;
             let mut prev: *mut Descriptor = null_mut();
 
-            // block of locks
-            let lock_ptr = unsafe { page_alloc::<u8>(LOCK_BLOCK_SZ) };
-            let mut curr_lock_ptr: *mut u8 = unsafe { lock_ptr.offset(size_of::<Mutex>() as isize) };
-            curr_lock_ptr = align_addr(curr_lock_ptr, CACHELINE);
-
             while unsafe {
                 (curr_ptr.offset(size_of::<Descriptor>() as isize))
                     .offset_from(ptr.offset(DESCRIPTOR_BLOCK_SZ as isize))
                     < 0
             } {
                 let curr = curr_ptr as *mut Descriptor;
-                let curr_lock = curr_lock_ptr as *mut Mutex;
                 if !prev.is_null() {
                     unsafe {
                         (*prev)
-                            .set_next_free(DescriptorNode::new(&mut *curr_lock, &mut *curr))
+                            .set_next_free(DescriptorNode::new(&mut *curr))
                     };
                 }
 
                 prev = curr;
-                
                 curr_ptr = unsafe { curr_ptr.offset(size_of::<Descriptor>() as isize) };
                 curr_ptr = align_addr(curr_ptr, CACHELINE);
-                
-                curr_lock_ptr = unsafe { curr_lock_ptr.offset(size_of::<Mutex>() as isize) };
-                curr_lock_ptr = align_addr(curr_lock_ptr, CACHELINE);
             }
 
             unsafe {
                 (*prev)
-                    .set_next_free(DescriptorNode::new(null_mut(), null_mut()))
+                    .set_next_free(DescriptorNode::new(null_mut()))
             };
 
             let old_head = unsafe { AVAIL_DESC };
-            let mut new_head: DescriptorNode = DescriptorNode::new(null_mut(), null_mut());
+            let mut new_head: DescriptorNode = DescriptorNode::new(null_mut());
             unsafe { (*prev).set_next_free(old_head) };
             new_head.set_desc(first, old_head.get_counter() + 1);
-            unsafe { AVAIL_DESC.unlock() };
+            unsafe { POOL_LOCK.release() };
 
             return unsafe { &mut *ret };
         }
@@ -213,30 +194,42 @@ impl<'a> Descriptor<'a> {
 
     pub fn retire(&'static mut self) {
         self.block_size = 0;
-        unsafe { AVAIL_DESC.lock() };
+        unsafe { POOL_LOCK.acquire() };
         let old_head = unsafe { AVAIL_DESC };
-        let mut new_head: DescriptorNode = DescriptorNode::new(null_mut(), null_mut());
+        let mut new_head: DescriptorNode = DescriptorNode::new(null_mut());
 
         self.set_next_free(old_head);
         new_head.set_desc(self, old_head.get_counter() + 1);
         
         unsafe {
             AVAIL_DESC = new_head;
-            AVAIL_DESC.unlock();
+            POOL_LOCK.release();
         }
+    }
+}
+
+pub struct PartialListGuard<'a> {
+    guard: Ref<'a, DescriptorNode<'a>>
+}
+
+impl <'a> Deref for PartialListGuard<'a> {
+    type Target = DescriptorNode<'a>;
+
+    fn deref(&self) -> &DescriptorNode<'a> {
+        &self.guard
     }
 }
 
 #[derive(Debug)]
 pub struct ProcHeap<'a> {
-    partial_list: DescriptorNode<'a>,
+    partial_list: RefCell<DescriptorNode<'a>>,
     sc_idx: usize,
 }
 
 impl<'a> ProcHeap<'a> {
     pub const fn const_new(sc_idx: usize) -> Self {
         ProcHeap {
-            partial_list: DescriptorNode { lock: null_mut(), desc: null_mut() },
+            partial_list: RefCell::new(DescriptorNode { desc: null_mut() }),
             sc_idx: sc_idx,
         }
     }
@@ -249,12 +242,12 @@ impl<'a> ProcHeap<'a> {
         self.sc_idx
     }
 
-    pub fn get_partial_list(&self) -> &DescriptorNode<'a> {
-        &self.partial_list
+    pub fn get_partial_list(&'a self) -> PartialListGuard<'a> {
+        PartialListGuard { guard: self.partial_list.borrow() }
     }
 
-    pub fn set_partial_list(&mut self, list: DescriptorNode<'a>) {
-        self.partial_list = list
+    pub fn set_partial_list(&self, list: DescriptorNode<'a>) {
+        *(self.partial_list.borrow_mut()) = list
     }
 
     pub fn get_size_class(&self) -> &SizeClassData {

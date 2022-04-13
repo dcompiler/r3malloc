@@ -1,5 +1,5 @@
 use crate::defines::{align_addr, page_ceiling, PAGE, PAGE_MASK};
-use crate::heap::{Anchor, Descriptor, DescriptorNode, ProcHeap, SbState};
+use crate::heap::{Anchor, Descriptor, DescriptorNode, ProcHeap, SbState, POOL_LOCK};
 use crate::log_debug;
 use crate::pagemap::{PageInfo, SPAGEMAP};
 use crate::pages::{page_alloc, page_free};
@@ -61,44 +61,45 @@ fn unregister_desc(heap: Option<&mut ProcHeap>, superblock: *mut u8) {
     update_page_map(heap, superblock, None, 0);
 }
 
-pub fn heap_pop_partial<'a>(heap: &mut ProcHeap<'a>) -> *mut Descriptor<'a> {
+pub fn heap_pop_partial<'a>(heap: &'a ProcHeap<'a>) -> *mut Descriptor<'a> {
+    unsafe { POOL_LOCK.acquire() };
+
     let list = heap.get_partial_list();
-    list.lock();
     let old_head = list;
 
     let old_desc = old_head.get_desc();
     if old_desc.is_null() {
+        unsafe { POOL_LOCK.release() };
         return null_mut();
     }
-    unsafe { (*old_desc).get_next_partial().lock() }
     let new_head = unsafe { (*old_desc).get_next_partial() };
     let desc = new_head.get_desc();
     let counter = old_head.get_counter();
     new_head.set_desc(desc, counter);
 
     heap.set_partial_list(*new_head);
-    heap.get_partial_list().unlock();
-    new_head.unlock();
+    
+    unsafe { POOL_LOCK.release() };
 
     old_head.get_desc()
 }
 
 pub fn heap_push_partial(desc: *mut Descriptor) {
+    unsafe { POOL_LOCK.acquire() };
+
     let list = unsafe { (*(*desc).get_heap()).get_partial_list() };
-    list.lock();
     let old_head = list;
-    let mut new_head = DescriptorNode::new(null_mut(), null_mut());
+    let mut new_head = DescriptorNode::new(null_mut());
 
     new_head.set_desc(desc, old_head.get_counter() + 1);
     // FIXME: ASSERT(oldHead.GetDesc() != newHead.GetDesc());
     unsafe {
-        (*new_head.get_desc()).get_next_partial().lock();
         (*new_head.get_desc()).set_next_partial(*old_head);
     }
 
     unsafe { (*(*desc).get_heap()).set_partial_list(new_head) };
-    list.unlock();
-    unsafe { (*new_head.get_desc()).get_next_partial().unlock() };
+    
+    unsafe { POOL_LOCK.release() };
 }
 
 pub fn init_malloc() {

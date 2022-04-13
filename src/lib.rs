@@ -44,9 +44,9 @@ pub extern "C" fn test() -> u32 {
     // test heap push/pop
     let heap = unsafe { &mut HEAPS[1] };
     let mut stuff: *mut Descriptor = heap_pop_partial(heap);
-    let list = heap.get_partial_list();
-    libc_println!("\ninitial list of heap: {:?}\n", list);
-    _dummy.set_heap(heap);
+//    let list = heap.get_partial_list();
+//    libc_println!("\ninitial list of heap: {:?}\n", list);
+//    _dummy.set_heap(heap);
     _dummy.set_block_size(10);
     _dummy.set_maxcount(20);
     libc_println!("desc to add: {:?}\n", _dummy);
