@@ -1,10 +1,10 @@
-#![no_std] // Disables Rust heap
+// #![no_std] // Disables Rust heap
 #![allow(dead_code)] // FIXME: have it here so there's no warning spam
 #![feature(thread_local)]
 #![feature(lang_items)]
 
-#[lang = "eh_personality"]
-extern "C" fn eh_personality() {}
+// #[lang = "eh_personality"]
+// extern "C" fn eh_personality() {}
 
 mod defines;
 mod heap;
@@ -187,12 +187,12 @@ pub extern "C" fn pvalloc(size: usize) -> *mut libc::c_void {
     r3malloc::do_aligned_alloc(PAGE, size) as *mut libc::c_void
 }
 
-use core::panic::PanicInfo;
+// use core::panic::PanicInfo;
 
-// Called on panic
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    libc_println!("{}", info);
+// // Called on panic
+// #[panic_handler]
+// fn panic(info: &PanicInfo) -> ! {
+//     libc_println!("{}", info);
 
-    loop {}
-}
+//     loop {}
+// }
