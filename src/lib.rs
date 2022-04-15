@@ -2,6 +2,7 @@
 #![allow(dead_code)] // FIXME: have it here so there's no warning spam
 #![feature(thread_local)]
 #![feature(lang_items)]
+#![feature(const_mut_refs)]
 
 #[lang = "eh_personality"]
 extern "C" fn eh_personality() {}
@@ -14,6 +15,7 @@ mod pages;
 mod r3malloc;
 mod size_classes;
 mod tcache;
+mod apf;
 
 use heap::Anchor;
 use libc_print::libc_println;
