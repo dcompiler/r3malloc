@@ -2,9 +2,9 @@ use crate::pages::page_alloc;
 use core::{mem::size_of, slice::from_raw_parts_mut};
 use core::cmp::{min, max};
 
-const LV_CHUNK: usize = 10000;
+const LV_CHUNK: usize = (1 as usize) << 32;
 const LV_SIZE: usize = LV_CHUNK * size_of::<Liveness>();
-const RS_CHUNK: usize = 10000;
+const RS_CHUNK: usize = (1 as usize) << 32;
 const RS_SIZE: usize = RS_CHUNK * size_of::<Reuse>();
 const BOOST_LENGTH: usize = 20000;
 const WINDOW_LENGTH: usize = 2;
@@ -185,7 +185,15 @@ impl<'a> Apf<'a> {
 		self.reuse.on_free();
 	}
 
+	pub fn inc_timer(&mut self) {
+		self.liveness.inc_timer();
+		self.reuse.inc_timer();
+	}
+
 	pub fn demand(&self) -> usize {
 		self.liveness.compute(WINDOW_LENGTH) - self.liveness.compute(0) - self.reuse.compute()
 	}
 }
+
+#[thread_local]
+pub static mut APF: Apf = Apf::new();
