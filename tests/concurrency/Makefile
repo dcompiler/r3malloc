@@ -1,5 +1,5 @@
 CC = gcc
-FLAGS = -pthread
+FLAGS = -pthread -g -O0
 LFLAGS = -L . -l r3malloc
 CP_LIB = cp ../../target/debug/libr3malloc.a .
 
