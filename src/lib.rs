@@ -14,6 +14,7 @@ mod pages;
 mod r3malloc;
 mod size_classes;
 mod tcache;
+mod prototype_linked_list;
 
 use heap::Anchor;
 use libc_print::libc_println;
@@ -25,6 +26,51 @@ use size_classes::SIZE_CLASSES;
 use defines::{PTR_MASK, PAGE};
 
 extern crate libc;
+
+//| prototype |----------------------------------------------------------------------------------------------------------------
+use prototype_linked_list::{Descriptor, DescriptorNode, Pointer, ProcHeap, heap_pop_partial, heap_push_partial, HEAP};
+
+#[no_mangle]
+pub extern "C" fn add_to_linked_list(value: u32) {
+    if unsafe { HEAP.is_none() } {
+        unsafe { HEAP = Some(Pointer::new(ProcHeap::new())) }
+    }
+
+    match unsafe { HEAP.clone() } {
+        Some(heap) => {
+            heap_push_partial(Pointer::new(Descriptor { value: value, next_partial: DescriptorNode { maybe_desc: None, counter: 0 }, heap: heap.clone() }));
+        }
+        None => {}
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn remove_from_linked_list() -> u32 {
+    if unsafe { HEAP.is_none() } {
+        unsafe { HEAP = Some(Pointer::new(ProcHeap::new())) }
+    }
+
+    match unsafe { HEAP.clone() } {
+        Some(heap) => {
+            match heap_pop_partial(&mut heap.borrow_mut()) {
+                Some(desc) =>  desc.borrow().get_value(),
+                None => 0
+            }
+        }
+        None => 0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn print_linked_list() {
+    match unsafe { HEAP.clone() } {
+        Some(heap) => {
+            heap.borrow().print();
+        }
+        None => {}
+    }
+}
+//-----------------------------------------------------------------------------------------------------------------------------
 
 // FIXME: Dummy code as a POC (see tests/dummy.c)
 #[no_mangle]
