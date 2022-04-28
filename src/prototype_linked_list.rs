@@ -4,8 +4,10 @@
 
 use std::cell::{UnsafeCell, RefCell, RefMut, Ref};
 use std::rc::{Rc};
+use crate::lock::Mutex;
 
 pub static mut HEAP: Option<Pointer<ProcHeap>> = None;
+pub static mut POOL_LOCK: Mutex = Mutex::new();
 
 #[derive(Clone, Debug)]
 pub struct ProcHeap<'a> {
@@ -123,6 +125,7 @@ impl<'a> Descriptor<'a> {
 }
 
 pub fn heap_pop_partial<'a>(heap: &mut ProcHeap<'a>) -> Option<Pointer<Descriptor<'a>>> {
+    unsafe { POOL_LOCK.acquire() };
     let list = heap.get_partial_list();
     let old_head = list;
 
@@ -135,14 +138,18 @@ pub fn heap_pop_partial<'a>(heap: &mut ProcHeap<'a>) -> Option<Pointer<Descripto
             new_head.set_desc(desc, counter);
 
             heap.set_partial_list(new_head.clone());
+            unsafe { POOL_LOCK.release() };
+            old_head.get_desc()
         }
-        None => { return None; }
+        None => {
+            unsafe { POOL_LOCK.release() };
+            return None;
+        }
     }
-
-    old_head.get_desc()
 }
 
 pub fn heap_push_partial<'a>(desc: Pointer<Descriptor<'a>>) {
+    unsafe { POOL_LOCK.acquire() };
     let list = (desc.borrow().get_heap()).borrow().get_partial_list();
     let old_head = list;
     let mut new_head = DescriptorNode::new(None);
@@ -152,5 +159,6 @@ pub fn heap_push_partial<'a>(desc: Pointer<Descriptor<'a>>) {
     new_head.get_desc().unwrap().borrow_mut()
         .set_next_partial(old_head.clone());
 
-    (*(desc.borrow())).get_heap().borrow_mut().set_partial_list(new_head.clone())
+    (*(desc.borrow())).get_heap().borrow_mut().set_partial_list(new_head.clone());
+    unsafe { POOL_LOCK.release() };
 }

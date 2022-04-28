@@ -17,9 +17,9 @@ void* do_work(void* thread_id) {
         add_to_linked_list(i);
     }
 
-    for (int i = (int) thread_id; i < 100 * (int) thread_id; i++) {
-        remove_from_linked_list();
-    }
+    // for (int i = (int) thread_id; i < 100 * (int) thread_id; i++) {
+    //     remove_from_linked_list();
+    // }
     printf("---> %ld done\n", (long) thread_id);
     pthread_exit(NULL);
 }

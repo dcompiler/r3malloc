@@ -15,6 +15,7 @@ mod r3malloc;
 mod size_classes;
 mod tcache;
 mod prototype_linked_list;
+mod lock;
 
 use heap::Anchor;
 use libc_print::libc_println;
