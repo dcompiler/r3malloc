@@ -6,6 +6,7 @@ use crate::pages::{page_alloc, page_free};
 use crate::size_classes::{
     compute_idx, get_size_class, init_size_class, MAX_SZ, MAX_SZ_IDX, SIZE_CLASSES,
 };
+use crate::apf::{APF, APF_INIT};
 use crate::tcache::{TCacheBin, TCACHE};
 use atomic::Ordering;
 use core::ptr::null_mut;
@@ -352,6 +353,14 @@ pub fn do_malloc(size: usize) -> *mut u8 {
         init_malloc();
     }
 
+    // ensure APF analysis is initialized
+    if unlikely(unsafe { !APF_INIT }) {
+        unsafe {
+            APF.init();
+            APF_INIT = true;
+        }
+    }
+
     // large block allocation
     if unlikely(size > MAX_SZ) {
         let pages = page_ceiling(size);
@@ -375,9 +384,15 @@ pub fn do_malloc(size: usize) -> *mut u8 {
         register_desc(desc);
 
         let ptr = desc.get_superblock();
-        log_debug!("Large, ptr: {}", ptr);
+        log_debug!("Large, ptr: ", ptr);
         return ptr;
     }
+
+    unsafe {
+        APF.on_allocation();
+        APF.inc_timer();
+    }
+    unsafe { log_debug!("Demand: ", APF.demand()); }
 
     let sc_idx = get_size_class(size);
 
@@ -447,7 +462,7 @@ pub fn do_aligned_alloc(alignment: usize, _size: usize) -> *mut u8 {
             update_page_map(None, ptr, Some(desc), 0);
         }
 
-        log_debug!("Large, ptr: {}", ptr);
+        log_debug!("Large, ptr: ", ptr);
         return ptr;
     }
 
@@ -492,6 +507,8 @@ pub fn do_free(ptr: *mut u8) {
 
         return;
     }
+
+    unsafe { APF.on_free(); }
 
     let cache = unsafe { &mut TCACHE[sc_idx] };
     let sc = unsafe { &SIZE_CLASSES[sc_idx] };

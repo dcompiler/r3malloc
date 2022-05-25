@@ -1,5 +1,8 @@
 // Credit to https://stackoverflow.com/questions/38088067/equivalent-of-func-or-function-in-rust
-pub const LOG: bool = false;
+pub const LOG: bool = match option_env!("LOG") {
+    Some(_) => true,
+    None => false,
+};
 
 #[macro_export]
 macro_rules! function {
@@ -20,7 +23,7 @@ macro_rules! log_debug {
         use crate::log::LOG;
         if LOG {
             use libc_print::{libc_println, libc_print};
-            libc_print!("{:?}: {:?} {:?}", core::file!(), core::line!(), crate::function!());
+            libc_print!("{}: {} {}", core::file!(), core::line!(), crate::function!());
             $(
                 libc_print!(" {:?}", $x);
             )*

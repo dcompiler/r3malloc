@@ -1,3 +1,4 @@
 /target
 **/*.o
 **/libr3malloc.a
+.idea/

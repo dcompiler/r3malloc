@@ -21,3 +21,14 @@ pub fn page_ceiling(s: usize) -> usize {
 pub fn align_addr<T>(addr: *mut T, align: usize) -> *mut T {
     (((addr as usize) + (align - 1)) & (!align + 1)) as *mut T
 }
+
+pub const fn parse_usize(s: &str) -> usize {
+    let mut out = 0;
+    let mut i = 0;
+    while i<s.len() {
+        out *= 10;
+        out += (s.as_bytes()[i] - b'0') as usize;
+        i += 1;
+    }
+    out
+}
