@@ -14,6 +14,9 @@ libc-print = "0.1.17"
 likely_stable = "0.1.2"
 c2rust-bitfields = { version = "0.3.0", features = ["no_std"] }
 
+[features]
+all_windows = []
+
 # Both profile.dev and profile.release panic configs are needed because of no_std
 
 [profile.dev]

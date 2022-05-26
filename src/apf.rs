@@ -88,6 +88,7 @@ impl<'a> Reuse<'a> {
 		}
 	}
 
+	#[cfg(feature = "all_windows")]
 	pub fn compute(&self) -> [f64; WINDOW_LENGTH] {
 		let mut reuse = [0.0; WINDOW_LENGTH];
 
@@ -116,7 +117,7 @@ impl<'a> Reuse<'a> {
 						z += wl as f64;
 					}
 
-					if self.free_intervals[i].0 as i64 >= self.num_events as i64 - (wl as i64) {
+					if self.free_intervals[i].0 as i64 >= self.num_events as i64 - (wl as i64 - 1) {
 						x += 1.0;
 					}
 					if self.free_intervals[i].1 <= wl - 1 {
@@ -132,6 +133,23 @@ impl<'a> Reuse<'a> {
 		}
 
 		reuse
+	}
+
+	#[cfg(not(feature = "all_windows"))]
+	pub fn compute(&self, wl: usize) -> f64 {
+		let mut x = 0.0;
+		let mut y = 0.0;
+		let mut z = 0.0;
+
+		for i in 0..self.num_intervals {
+			if self.free_intervals[i].1 - self.free_intervals[i].0 <= wl {
+				x += min(self.num_events as i64 - wl as i64, self.free_intervals[i].0 as i64) as f64;
+				y += max(wl, self.free_intervals[i].1) as f64;
+				z += wl as f64 + 1.0;
+			}
+		}
+
+		(x - y + z) / (self.num_events as f64 - wl as f64 + 1.0)
 	}
 }
 
@@ -160,12 +178,18 @@ impl<'a> Apf<'a> {
 		self.reuse.inc_timer();
 	}
 
+	#[cfg(feature = "all_windows")]
 	pub fn demand(&self) -> [f64; WINDOW_LENGTH] {
 		let mut reuse = self.reuse.compute();
 		for wl in 1..WINDOW_LENGTH+1 {
 			reuse[wl-1] = wl as f64 - reuse[wl - 1];
 		}
 		reuse
+	}
+
+	#[cfg(not(feature = "all_windows"))]
+	pub fn demand(&self) -> f64 {
+		WINDOW_LENGTH as f64 - self.reuse.compute(WINDOW_LENGTH)
 	}
 }
 
