@@ -238,7 +238,7 @@ impl<'a> ProcHeap<'a> {
     pub const fn const_new(sc_idx: usize) -> Self {
         ProcHeap {
             partial_list: Atomic::new(DescriptorNode { desc: null_mut() }),
-            sc_idx: sc_idx,
+            sc_idx,
         }
     }
 

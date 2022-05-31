@@ -1,3 +1,4 @@
+use crate::apf::APF_INIT;
 use crate::defines::{align_addr, page_ceiling, PAGE, PAGE_MASK};
 use crate::heap::{Anchor, Descriptor, DescriptorNode, ProcHeap, SbState};
 use crate::log_debug;
@@ -6,7 +7,6 @@ use crate::pages::{page_alloc, page_free};
 use crate::size_classes::{
     compute_idx, get_size_class, init_size_class, MAX_SZ, MAX_SZ_IDX, SIZE_CLASSES,
 };
-use crate::apf::{APF, APF_INIT};
 use crate::tcache::{TCacheBin, TCACHE};
 use atomic::Ordering;
 use core::ptr::null_mut;
@@ -117,9 +117,6 @@ pub fn init_malloc() {
     unsafe {
         MALLOC_INIT = true;
     }
-
-    // init size classes
-    init_size_class();
 
     // init page map
     unsafe { SPAGEMAP.init() };
@@ -353,12 +350,9 @@ pub fn do_malloc(size: usize) -> *mut u8 {
         init_malloc();
     }
 
-    // ensure APF analysis is initialized
+    // init size classes (here because APF analysis is per thread per sizeclass
     if unlikely(unsafe { !APF_INIT }) {
-        unsafe {
-            APF.init();
-            APF_INIT = true;
-        }
+            init_size_class();
     }
 
     // large block allocation
@@ -388,17 +382,18 @@ pub fn do_malloc(size: usize) -> *mut u8 {
         return ptr;
     }
 
-    unsafe {
-        APF.on_allocation();
-        APF.inc_timer();
-    }
-    unsafe { log_debug!("Demand: ", APF.demand()); }
-
     let sc_idx = get_size_class(size);
+
+    unsafe {
+        SIZE_CLASSES[sc_idx].get_apf().on_allocation();
+        SIZE_CLASSES[sc_idx].get_apf().inc_timer();
+    }
+
+    unsafe { log_debug!("Demand: ", SIZE_CLASSES[sc_idx].get_apf().demand()); }
 
     let cache = unsafe { &mut TCACHE[sc_idx] };
 
-    log_debug!("Thread cache: ", cache, " size class", sc_idx);
+    unsafe { log_debug!("Thread cache: ", cache, " size class", SIZE_CLASSES[sc_idx]) };
 
     if unlikely(cache.get_block_num() == 0) {
         fill_cache(sc_idx, cache);
@@ -508,10 +503,10 @@ pub fn do_free(ptr: *mut u8) {
         return;
     }
 
-    unsafe { APF.on_free(); }
-
     let cache = unsafe { &mut TCACHE[sc_idx] };
     let sc = unsafe { &SIZE_CLASSES[sc_idx] };
+
+    unsafe { SIZE_CLASSES[sc_idx].get_apf().on_free(); }
 
     if unlikely(cache.get_block_num() >= sc.get_cache_block_num()) {
         flush_cache(sc_idx, cache);

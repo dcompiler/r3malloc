@@ -1,16 +1,29 @@
 use crate::defines::PAGE;
 use crate::heap::MAX_BLOCK_NUM;
+use crate::apf::{Apf, APF_INIT};
 use core::assert;
+use array_init::array_init;
 
-#[derive(Copy, Clone)]
+#[derive(Debug)]
 pub struct SizeClassData {
     block_size: u32,
     sb_size: u32,
     block_num: u32,
     cache_block_num: u32,
+    apf: Apf,
 }
 
 impl SizeClassData {
+    pub const fn const_new() -> Self {
+        SizeClassData {
+            block_size: 0,
+            sb_size: 0,
+            block_num: 0,
+            cache_block_num: 0,
+            apf: Apf::new(),
+        }
+    }
+
     pub fn get_block_size(&self) -> u32 {
         self.block_size
     }
@@ -25,6 +38,10 @@ impl SizeClassData {
 
     pub fn get_cache_block_num(&self) -> u32 {
         self.cache_block_num
+    }
+
+    pub fn get_apf(&mut self) -> &mut Apf {
+        &mut self.apf
     }
 }
 
@@ -54,6 +71,7 @@ fn size_class_filter_init(
             sb_size: pgs * (PAGE as u32),
             block_num: 0,
             cache_block_num: 0,
+            apf: Apf::new(),
         }),
         SizeClassOpt::No => None,
     }
@@ -90,12 +108,13 @@ pub fn compute_idx(superblock: *mut u8, block: *mut u8, sc_idx: usize) -> u32 {
 }
 
 fn size_classes() -> [SizeClassData; MAX_SZ_IDX] {
-    let mut size_classes = [SizeClassData {
-        block_size: 0,
-        sb_size: 0,
-        block_num: 0,
-        cache_block_num: 0,
-    }; MAX_SZ_IDX];
+    let mut size_classes: [SizeClassData; MAX_SZ_IDX] = array_init(|_i| SizeClassData {
+            block_size: 0,
+            sb_size: 0,
+            block_num: 0,
+            cache_block_num: 0,
+            apf: Apf::new(),
+        });
 
     let mut i: usize = 1;
     let mut j: usize = 0;
@@ -103,6 +122,7 @@ fn size_classes() -> [SizeClassData; MAX_SZ_IDX] {
         match size_class_filter_init(&SIZE_CLASSES_TABLE[j]) {
             Some(sc) => {
                 size_classes[i] = sc;
+                size_classes[i].apf.init();
                 i += 1
             }
             None => (),
@@ -114,12 +134,11 @@ fn size_classes() -> [SizeClassData; MAX_SZ_IDX] {
 
 // NOTE: this is initialized in init_size_class
 // maybe we want to wrap it into an Option to ensure initialization?
-pub static mut SIZE_CLASSES: [SizeClassData; MAX_SZ_IDX] = [SizeClassData {
-    block_size: 0,
-    sb_size: 0,
-    block_num: 0,
-    cache_block_num: 0,
-}; MAX_SZ_IDX];
+const SIZE_CLASS_INITIALIZER: SizeClassData = SizeClassData::const_new();
+
+#[thread_local]
+pub static mut SIZE_CLASSES: [SizeClassData; MAX_SZ_IDX] = [SIZE_CLASS_INITIALIZER; MAX_SZ_IDX];
+
 static mut SIZE_CLASS_LOOKUP: [usize; MAX_SZ + 1] = [0; MAX_SZ + 1];
 
 pub fn init_size_class() {
@@ -129,7 +148,7 @@ pub fn init_size_class() {
 
     // each superblock has to contain several block *perfectly*
     for sc_idx in 1..MAX_SZ_IDX {
-        let sc = unsafe { SIZE_CLASSES[sc_idx] };
+        let mut sc = unsafe { &mut SIZE_CLASSES[sc_idx] };
         let block_size = sc.block_size;
         let mut sb_size = sc.sb_size;
 
@@ -141,14 +160,11 @@ pub fn init_size_class() {
             sb_size += sc.sb_size;
         }
 
-        // update value in SIZE_CLASSES
-        unsafe {
-            SIZE_CLASSES[sc_idx].sb_size = sc.sb_size;
-        }
+        sc.sb_size = sb_size;
     }
 
     for sc_idx in 1..MAX_SZ_IDX {
-        let mut sc = unsafe { SIZE_CLASSES[sc_idx] };
+        let mut sc = unsafe { &mut SIZE_CLASSES[sc_idx] };
         let mut sb_size = sc.sb_size;
 
         // increase superblock size if needed
@@ -165,24 +181,22 @@ pub fn init_size_class() {
         assert!(sc.block_num > 0);
         assert!((sc.block_num as u64) < MAX_BLOCK_NUM);
         assert!(sc.block_num >= sc.cache_block_num);
-
-        // update value in SIZE_CLASSES
-        unsafe {
-            SIZE_CLASSES[sc_idx] = sc;
-        }
     }
 
     // first size class reserved for large allocations
     let mut lookup_idx: usize = 0;
     for sc_idx in 1..MAX_SZ_IDX {
-        let sc = unsafe { SIZE_CLASSES[sc_idx] };
-        while lookup_idx <= sc.block_size as usize {
+        let sc = unsafe { &mut SIZE_CLASSES[sc_idx] };
+        let block_size = sc.block_size as usize;
+        while lookup_idx <= block_size {
             unsafe {
                 SIZE_CLASS_LOOKUP[lookup_idx] = sc_idx;
             }
             lookup_idx += 1;
         }
     }
+
+    unsafe { APF_INIT = true; }
 }
 
 #[inline(always)]

@@ -1,6 +1,6 @@
 use crate::pages::page_alloc_overcommit;
 use crate::defines::parse_usize;
-use core::{mem::size_of, slice::from_raw_parts_mut};
+use core::{mem::size_of, ptr::null_mut};
 use core::cmp::{min, max};
 
 const RS_CHUNK: usize = (1 as usize) << 15;
@@ -11,22 +11,23 @@ const WINDOW_LENGTH: usize = match option_env!("WINDOW_LENGTH") {
 	None => 2
 };
 
-struct Reuse<'a> {
+#[derive(Debug)]
+struct Reuse {
 	current_time: usize,
 	num_intervals: usize,
-	free_intervals: &'a mut [(usize, usize)],
+	free_intervals: *mut (usize, usize),
 	boost_count: usize,
 	is_hibernating: bool,
 	num_frees: usize,
 	num_events: usize,
 }
 
-impl<'a> Reuse<'a> {
+impl Reuse {
 	pub const fn def() -> Self {
 		Reuse {
 			current_time: 0,
 			num_intervals: 0,
-			free_intervals: &mut [],
+			free_intervals: null_mut(),
 			boost_count: 0,
 			is_hibernating: false,
 			num_frees: 0,
@@ -36,7 +37,7 @@ impl<'a> Reuse<'a> {
 
 	pub fn init(&mut self) {
 		unsafe {
-			self.free_intervals = from_raw_parts_mut(page_alloc_overcommit::<(usize, usize)>(RS_SIZE), RS_CHUNK);
+			self.free_intervals = page_alloc_overcommit::<(usize, usize)>(RS_SIZE);
 		}
 	}
 
@@ -45,9 +46,13 @@ impl<'a> Reuse<'a> {
 			return
 		}
 
-		if self.free_intervals[self.num_intervals].0 != 0 {
-			self.free_intervals[self.num_intervals].1 = self.current_time;
-			self.num_intervals += 1;
+		unsafe {
+			let interval = self.free_intervals.add(self.num_intervals);
+
+			if (*interval).0 != 0 {
+				(*interval).1 = self.current_time;
+				self.num_intervals += 1;
+			}
 		}
 
 		self.num_events += 1;
@@ -58,7 +63,7 @@ impl<'a> Reuse<'a> {
 			return
 		}
 
-		self.free_intervals[self.num_frees].0 = self.current_time;
+		unsafe { (*self.free_intervals.add(self.num_frees)).0 = self.current_time; }
 		self.num_frees += 1;
 
 		self.num_events += 1;
@@ -79,8 +84,10 @@ impl<'a> Reuse<'a> {
 
 			self.current_time = 0;
 
-			for i in 0..BOOST_LENGTH+1 {
-				self.free_intervals[i] = (0, 0);
+			unsafe {
+				for i in 0..BOOST_LENGTH + 1 {
+					*self.free_intervals.add(i) = (0, 0);
+				}
 			}
 			self.num_intervals = 0;
 			self.num_frees = 0;
@@ -100,9 +107,10 @@ impl<'a> Reuse<'a> {
 
 			if wl == 1 {
 				for i in 0..self.num_intervals {
-					if self.free_intervals[i].0 == self.free_intervals[i].1 {
-						x += self.free_intervals[i].0 as f64;
-						y += self.free_intervals[i].1 as f64;
+					let interval = unsafe { *self.free_intervals.add(i) };
+					if interval.0 == interval.1 {
+						x += interval.0 as f64;
+						y += interval.1 as f64;
 						z += 1.0;
 					}
 				}
@@ -111,20 +119,22 @@ impl<'a> Reuse<'a> {
 				y += xyz[wl-2].1;
 				z += xyz[wl-2].2;
 				for i in 0..self.num_intervals {
-					if self.free_intervals[i].1 - self.free_intervals[i].0 + 1 == wl {
-						x += min(self.num_events - wl, self.free_intervals[i].0) as f64;
-						y += max(wl, self.free_intervals[i].1) as f64;
+					let interval = unsafe { *self.free_intervals.add(i) };
+
+					if interval.1 - interval.0 + 1 == wl {
+						x += min(self.num_events - wl, interval.0) as f64;
+						y += max(wl, interval.1) as f64;
 						z += wl as f64;
 					}
 
-					if self.free_intervals[i].0 as i64 >= self.num_events as i64 - (wl as i64 - 1) {
+					if interval.0 as i64 >= self.num_events as i64 - (wl as i64 - 1) {
 						x += 1.0;
 					}
-					if self.free_intervals[i].1 <= wl - 1 {
+					if interval.1 <= wl - 1 {
 						y += 1.0;
 					}
 
-					if self.free_intervals[i].1 - self.free_intervals[i].0 < wl - 1 {
+					if interval.1 - interval.0 < wl - 1 {
 						z += 1.0;
 					}
 				}
@@ -155,11 +165,12 @@ impl<'a> Reuse<'a> {
 	}
 }
 
-pub struct Apf<'a> {
-	reuse: Reuse<'a>,
+#[derive(Debug)]
+pub struct Apf {
+	reuse: Reuse,
 }
 
-impl<'a> Apf<'a> {
+impl Apf {
 	pub const fn new() -> Self {
 		Apf { reuse: Reuse::def() }
 	}
@@ -197,6 +208,3 @@ impl<'a> Apf<'a> {
 
 #[thread_local]
 pub static mut APF_INIT: bool = false;
-
-#[thread_local]
-pub static mut APF: Apf = Apf::new();
