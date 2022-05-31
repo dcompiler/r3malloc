@@ -90,6 +90,7 @@ impl<'a> Reuse<'a> {
 
 	#[cfg(feature = "all_windows")]
 	pub fn compute(&self) -> [f64; WINDOW_LENGTH] {
+		let mut xyz = [(0.0, 0.0, 0.0); WINDOW_LENGTH];
 		let mut reuse = [0.0; WINDOW_LENGTH];
 
 		for wl in 1..WINDOW_LENGTH+1 {
@@ -106,11 +107,10 @@ impl<'a> Reuse<'a> {
 					}
 				}
 			} else {
+				x += xyz[wl-2].0;
+				y += xyz[wl-2].1;
+				z += xyz[wl-2].2;
 				for i in 0..self.num_intervals {
-					x += reuse[wl-2];
-					y += reuse[wl-2];
-					z += reuse[wl-2];
-
 					if self.free_intervals[i].1 - self.free_intervals[i].0 + 1 == wl {
 						x += min(self.num_events - wl, self.free_intervals[i].0) as f64;
 						y += max(wl, self.free_intervals[i].1) as f64;
@@ -123,12 +123,14 @@ impl<'a> Reuse<'a> {
 					if self.free_intervals[i].1 <= wl - 1 {
 						y += 1.0;
 					}
-					if self.free_intervals[i].1 - self.free_intervals[i].0 < wl {
+
+					if self.free_intervals[i].1 - self.free_intervals[i].0 < wl - 1 {
 						z += 1.0;
 					}
 				}
 			}
 
+			xyz[wl - 1] = (x, y, z);
 			reuse[wl - 1] = (x - y + z) / (self.num_events as f64 - wl as f64 + 1.0);
 		}
 
