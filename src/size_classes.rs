@@ -3,6 +3,7 @@ use crate::heap::MAX_BLOCK_NUM;
 use crate::apf::{Apf, APF_INIT};
 use core::assert;
 use array_init::array_init;
+use crate::log_debug;
 
 #[derive(Debug)]
 pub struct SizeClassData {

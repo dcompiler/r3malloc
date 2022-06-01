@@ -205,8 +205,6 @@ fn malloc_from_new_sb(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) ->
     let block_size = sc.get_block_size();
     let maxcount = sc.get_block_num();
 
-    // FIXME: ASSERT(desc); should we check for this???
-
     desc.set_heap(heap);
     desc.set_block_size(block_size);
     desc.set_maxcount(maxcount);
@@ -389,7 +387,7 @@ pub fn do_malloc(size: usize) -> *mut u8 {
         SIZE_CLASSES[sc_idx].get_apf().inc_timer();
     }
 
-    unsafe { log_debug!("Demand: ", SIZE_CLASSES[sc_idx].get_apf().demand()); }
+    unsafe { log_debug!("Demand: ", SIZE_CLASSES[sc_idx].get_apf().demand(None)); }
 
     let cache = unsafe { &mut TCACHE[sc_idx] };
 
@@ -481,11 +479,9 @@ pub fn do_free(ptr: *mut u8) {
     let info = unsafe { SPAGEMAP.get_page_info(ptr) };
     let desc = info.get_desc();
 
-    // FIXME: ASSERT(desc); apparantly can happen with dynamic loading
-
     let sc_idx = info.get_sc_idx();
 
-    log_debug!("Desc ", desc, ", ptr ", ptr);
+    log_debug!("Free: desc ", desc, ", ptr ", ptr);
 
     if unlikely(sc_idx == 0) {
         let superblock = unsafe { (*desc).get_superblock() };

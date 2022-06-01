@@ -10,6 +10,11 @@ const WINDOW_LENGTH: usize = match option_env!("WINDOW_LENGTH") {
 	Some(wl) => parse_usize(wl),
 	None => 2
 };
+// default target apf is 1000
+const TARGET_APF: usize = match option_env!("TARGET_APF") {
+	Some(apf) => parse_usize(apf),
+	None => 1000
+};
 
 #[derive(Debug)]
 struct Reuse {
@@ -39,6 +44,10 @@ impl Reuse {
 		unsafe {
 			self.free_intervals = page_alloc_overcommit::<(usize, usize)>(RS_SIZE);
 		}
+	}
+
+	pub fn get_time(&self) -> usize {
+		self.current_time
 	}
 
 	pub fn on_allocation(&mut self) {
@@ -154,10 +163,11 @@ impl Reuse {
 		let mut z = 0.0;
 
 		for i in 0..self.num_intervals {
-			if self.free_intervals[i].1 - self.free_intervals[i].0 <= wl {
-				x += min(self.num_events as i64 - wl as i64, self.free_intervals[i].0 as i64) as f64;
-				y += max(wl, self.free_intervals[i].1) as f64;
-				z += wl as f64 + 1.0;
+			let interval = unsafe { *self.free_intervals.add(i) };
+			if interval.1 - interval.0 < wl {
+				x += min(self.num_events as i64 - wl as i64, interval.0 as i64) as f64;
+				y += max(wl, interval.1) as f64;
+				z += wl as f64;
 			}
 		}
 
@@ -168,11 +178,13 @@ impl Reuse {
 #[derive(Debug)]
 pub struct Apf {
 	reuse: Reuse,
+	num_fetches: usize,
+	current_apf: usize,
 }
 
 impl Apf {
 	pub const fn new() -> Self {
-		Apf { reuse: Reuse::def() }
+		Apf { reuse: Reuse::def(), num_fetches: 0, current_apf: 0 }
 	}
 
 	pub fn init(&mut self) {
@@ -186,6 +198,8 @@ impl Apf {
 	pub fn on_free(&mut self) {
 		self.reuse.on_free();
 	}
+
+	pub fn on_fetch(&mut self) { self.num_fetches += 1; }
 
 	pub fn inc_timer(&mut self) {
 		self.reuse.inc_timer();
@@ -201,8 +215,30 @@ impl Apf {
 	}
 
 	#[cfg(not(feature = "all_windows"))]
-	pub fn demand(&self) -> f64 {
-		WINDOW_LENGTH as f64 - self.reuse.compute(WINDOW_LENGTH)
+	pub fn demand(&self, wl: Option<usize>) -> f64 {
+		match wl {
+			Some(wl) => wl as f64 - self.reuse.compute(wl),
+			None => WINDOW_LENGTH as f64 - self.reuse.compute(WINDOW_LENGTH)
+		}
+	}
+
+	pub fn update_apf(&mut self) {
+		let current_time = self.reuse.get_time();
+		if TARGET_APF * (self.num_fetches + 1) <= current_time {
+			self.current_apf = TARGET_APF;
+		} else {
+			self.current_apf = TARGET_APF * (self.num_fetches + 1) - current_time;
+		}
+	}
+
+	#[cfg(not(feature = "all_windows"))]
+	pub fn should_update_slots(&mut self, available_slots: usize) -> Option<usize> {
+		let demand = self.demand(Some(self.current_apf)) as usize;
+		if available_slots == 2 * demand + 1 {
+			Some(demand + 1)
+		} else {
+			None
+		}
 	}
 }
 
