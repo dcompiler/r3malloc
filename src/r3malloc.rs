@@ -341,6 +341,80 @@ fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
     }
 }
 
+fn cut_cache(sc_idx: usize, cache: &mut TCacheBin, cut_by: u32) {
+    let heap = unsafe { &HEAPS[sc_idx] };
+    let sc = unsafe { &SIZE_CLASSES[sc_idx] };
+    let sb_size = sc.get_sb_size();
+    let block_size = sc.get_block_size();
+    let maxcount = sc.get_block_num();
+
+    let head = cache.peek_block();
+    let mut tail = head;
+    let info = unsafe { SPAGEMAP.get_page_info(head) };
+    let desc = info.get_desc();
+    let superblock = unsafe { (*desc).get_superblock() };
+
+    for _ in 0..cut_by {
+        cache.pop_block();
+    }
+
+    let idx = compute_idx(superblock, head, sc_idx);
+
+    let old_anchor = unsafe { (*desc).get_anchor().load(Ordering::SeqCst) };
+    let mut new_anchor;
+
+    loop {
+        let next: *mut u8 =
+            unsafe { superblock.offset((old_anchor.avail() * block_size) as isize) };
+        unsafe {
+            *(tail as *mut *mut u8) = next;
+        }
+
+        new_anchor = old_anchor;
+        new_anchor.set_avail(idx);
+
+        if old_anchor.state() == SbState::Full as u32 {
+            new_anchor.set_state(SbState::Partial as u32);
+        }
+
+        assert!(unsafe { old_anchor.count() < (*desc).get_maxcount() });
+        if unsafe { old_anchor.count() + cut_by == (*desc).get_maxcount() } {
+            new_anchor.set_count(unsafe { (*desc).get_maxcount() - 1 });
+            new_anchor.set_state(SbState::Empty as u32);
+        } else {
+            new_anchor.set_count(new_anchor.count() + cut_by);
+        }
+
+        match unsafe {
+            (*desc).get_anchor().compare_exchange_weak(
+                old_anchor,
+                new_anchor,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            )
+        } {
+            Ok(_) => {
+                break;
+            }
+            _ => (),
+        }
+    }
+
+    assert!(old_anchor.avail() < maxcount || old_anchor.state() == SbState::Full as u32);
+    assert!(new_anchor.avail() < maxcount);
+    assert!(new_anchor.count() < maxcount);
+
+    if new_anchor.state() == SbState::Empty as u32 {
+        unregister_desc(Some(heap), superblock);
+
+        unsafe {
+            page_free(superblock, heap.get_size_class().get_sb_size() as usize);
+        }
+    } else if old_anchor.state() == SbState::Full as u32 {
+        heap_push_partial(desc);
+    }
+}
+
 #[inline(always)]
 pub fn do_malloc(size: usize) -> *mut u8 {
     // ensure malloc is initialized
@@ -506,6 +580,13 @@ pub fn do_free(ptr: *mut u8) {
 
     if unlikely(cache.get_block_num() >= sc.get_cache_block_num()) {
         flush_cache(sc_idx, cache);
+    } else {
+        unsafe {
+            if let Some(num_slots) = (&mut SIZE_CLASSES[sc_idx]).get_apf().should_update_slots(cache.get_block_num() as usize) {
+                log_debug!("Giving up", num_slots, "slots.");
+                cut_cache(sc_idx, cache, num_slots as u32);
+            }
+        }
     }
 
     cache.push_block(ptr);

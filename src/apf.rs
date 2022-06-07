@@ -234,7 +234,7 @@ impl Apf {
 	#[cfg(not(feature = "all_windows"))]
 	pub fn should_update_slots(&mut self, available_slots: usize) -> Option<usize> {
 		let demand = self.demand(Some(self.current_apf)) as usize;
-		if available_slots == 2 * demand + 1 {
+		if available_slots >= 2 * demand + 1 {
 			Some(demand + 1)
 		} else {
 			None
