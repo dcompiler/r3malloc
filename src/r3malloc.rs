@@ -344,7 +344,6 @@ fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
 fn cut_cache(sc_idx: usize, cache: &mut TCacheBin, cut_by: u32) {
     let heap = unsafe { &HEAPS[sc_idx] };
     let sc = unsafe { &SIZE_CLASSES[sc_idx] };
-    let sb_size = sc.get_sb_size();
     let block_size = sc.get_block_size();
     let maxcount = sc.get_block_num();
 
@@ -355,7 +354,7 @@ fn cut_cache(sc_idx: usize, cache: &mut TCacheBin, cut_by: u32) {
     let superblock = unsafe { (*desc).get_superblock() };
 
     for _ in 0..cut_by {
-        cache.pop_block();
+        tail = cache.pop_block();
     }
 
     let idx = compute_idx(superblock, head, sc_idx);

@@ -22,6 +22,11 @@ pub fn align_addr<T>(addr: *mut T, align: usize) -> *mut T {
     (((addr as usize) + (align - 1)) & (!align + 1)) as *mut T
 }
 
+#[inline(always)]
+pub fn align_val(val: usize, align: usize) -> usize {
+    (val + (align - 1)) & (!align + 1)
+}
+
 pub const fn parse_usize(s: &str) -> usize {
     let mut out = 0;
     let mut i = 0;
