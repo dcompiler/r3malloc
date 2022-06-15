@@ -468,6 +468,7 @@ pub fn do_malloc(size: usize) -> *mut u8 {
 
     if unlikely(cache.get_block_num() == 0) {
         fill_cache(sc_idx, cache);
+        unsafe { SIZE_CLASSES[sc_idx].get_apf().on_fetch(); }
     }
 
     cache.pop_block()

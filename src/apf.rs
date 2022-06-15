@@ -2,6 +2,7 @@ use crate::pages::page_alloc_overcommit;
 use crate::defines::parse_usize;
 use core::{mem::size_of, ptr::null_mut};
 use core::cmp::{min, max};
+use crate::log_debug;
 
 const RS_CHUNK: usize = (1 as usize) << 15;
 const RS_SIZE: usize = RS_CHUNK * size_of::<Reuse>();
@@ -199,7 +200,7 @@ impl Apf {
 		self.reuse.on_free();
 	}
 
-	pub fn on_fetch(&mut self) { self.num_fetches += 1; }
+	pub fn on_fetch(&mut self) { self.num_fetches += 1; log_debug!("Number of fetches", self.num_fetches); }
 
 	pub fn inc_timer(&mut self) {
 		self.reuse.inc_timer();
@@ -233,6 +234,7 @@ impl Apf {
 
 	#[cfg(not(feature = "all_windows"))]
 	pub fn should_update_slots(&mut self, available_slots: usize) -> Option<usize> {
+		self.update_apf();
 		let demand = self.demand(Some(self.current_apf)) as usize;
 		if available_slots >= 2 * demand + 1 {
 			Some(demand + 1)
