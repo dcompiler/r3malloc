@@ -1,5 +1,5 @@
 use crate::apf::APF_INIT;
-use crate::defines::{align_addr, page_ceiling, PAGE, PAGE_MASK};
+use crate::defines::{align_addr, align_val, page_ceiling, PAGE, PAGE_MASK};
 use crate::heap::{Anchor, Descriptor, DescriptorNode, ProcHeap, SbState};
 use crate::log_debug;
 use crate::pagemap::{PageInfo, SPAGEMAP};
@@ -479,9 +479,7 @@ pub fn do_aligned_alloc(alignment: usize, _size: usize) -> *mut u8 {
     if unlikely((alignment != 0) && !(alignment & (alignment - 1)) == 0) {
         return null_mut();
     }
-    let mut size = _size;
-
-    // FIXME: align size
+    let mut size = align_val(_size, alignment);
 
     assert!(size > 0 && alignment > 0 && size >= alignment);
 
