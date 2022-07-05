@@ -8,7 +8,7 @@ pub struct TCacheBin {
 }
 
 impl TCacheBin {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         TCacheBin {
             block: null_mut(),
             block_num: 0,
@@ -58,7 +58,4 @@ impl TCacheBin {
 }
 
 #[thread_local]
-pub static mut TCACHE: [TCacheBin; MAX_SZ_IDX] = [TCacheBin {
-    block: null_mut(),
-    block_num: 0,
-}; MAX_SZ_IDX];
+pub static mut TCACHE: [TCacheBin; MAX_SZ_IDX] = [TCacheBin::new(); MAX_SZ_IDX];

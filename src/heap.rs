@@ -120,10 +120,9 @@ impl<'a> Descriptor<'a> {
         self.superblock = superblock
     }
 
-    // FIXME: not static lifetime?
     pub fn alloc() -> &'static mut Self {
-        let old_head = unsafe { AVAIL_DESC.load(Ordering::SeqCst) };
         loop {
+            let old_head = unsafe { AVAIL_DESC.load(Ordering::SeqCst) };
             let desc: *mut Descriptor = old_head.get_desc();
             if !desc.is_null() {
                 let mut new_head = unsafe { (*desc).get_next_free().load(Ordering::SeqCst) };
@@ -177,9 +176,9 @@ impl<'a> Descriptor<'a> {
                         .store(DescriptorNode::new(null_mut()), Ordering::SeqCst)
                 };
 
-                let old_head = unsafe { AVAIL_DESC.load(Ordering::SeqCst) };
                 let mut new_head: DescriptorNode = DescriptorNode::new(null_mut());
                 loop {
+                    let old_head = unsafe { AVAIL_DESC.load(Ordering::SeqCst) };
                     unsafe {
                         (*prev).get_next_free().store(old_head, Ordering::SeqCst);
                         new_head.set_desc(first, old_head.get_counter() + 1);
@@ -205,9 +204,9 @@ impl<'a> Descriptor<'a> {
 
     pub fn retire(&'static mut self) {
         self.block_size = 0;
-        let old_head = unsafe { AVAIL_DESC.load(Ordering::SeqCst) };
         let mut new_head: DescriptorNode = DescriptorNode::new(null_mut());
         loop {
+            let old_head = unsafe { AVAIL_DESC.load(Ordering::SeqCst) };
             self.get_next_free().store(old_head, Ordering::SeqCst);
             new_head.set_desc(self, old_head.get_counter() + 1);
 

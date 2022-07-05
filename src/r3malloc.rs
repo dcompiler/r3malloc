@@ -64,9 +64,10 @@ fn unregister_desc(heap: Option<&ProcHeap>, superblock: *mut u8) {
 
 pub fn heap_pop_partial<'a>(heap: &ProcHeap<'a>) -> *mut Descriptor<'a> {
     let list = heap.get_partial_list();
-    let old_head = list.load(Ordering::SeqCst);
+    let mut old_head;
 
     loop {
+        old_head = list.load(Ordering::SeqCst);
         let old_desc = old_head.get_desc();
         if old_desc.is_null() {
             return null_mut();
@@ -89,12 +90,12 @@ pub fn heap_pop_partial<'a>(heap: &ProcHeap<'a>) -> *mut Descriptor<'a> {
 
 pub fn heap_push_partial(desc: *mut Descriptor) {
     let list = unsafe { (*(*desc).get_heap()).get_partial_list() };
-    let old_head = list.load(Ordering::SeqCst);
     let mut new_head = DescriptorNode::new(null_mut());
 
     loop {
+        let old_head = list.load(Ordering::SeqCst);
         new_head.set_desc(desc, old_head.get_counter() + 1);
-        // FIXME: ASSERT(oldHead.GetDesc() != newHead.GetDesc());
+        assert_ne!(old_head.get_desc(), new_head.get_desc());
         unsafe {
             (*new_head.get_desc())
                 .get_next_partial()
@@ -129,6 +130,12 @@ pub fn init_malloc() {
     }
 }
 
+pub fn thread_finalize() {
+    for sc_idx in 1..MAX_SZ_IDX {
+        flush_cache(sc_idx, unsafe{ &mut TCACHE[sc_idx] });
+    }
+}
+
 fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -> usize {
     let heap = unsafe { &HEAPS[sc_idx] };
 
@@ -138,12 +145,13 @@ fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -
     }
 
     // reserve blocks
-    let old_anchor = unsafe { (*desc).get_anchor().load(Ordering::SeqCst) };
+    let mut old_anchor;
     let max_count = unsafe { (*desc).get_maxcount() };
     let block_size = unsafe { (*desc).get_block_size() };
     let superblock: *mut u8 = unsafe { (*desc).get_superblock() };
 
     loop {
+        old_anchor = unsafe { (*desc).get_anchor().load(Ordering::SeqCst) };
         if old_anchor.state() == SbState::Empty as u32 {
             unsafe { (*desc).retire() }
             // retry
@@ -172,6 +180,7 @@ fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -
             )
         } {
             Ok(_) => {
+                log_debug!("Filled on descriptor", desc, "anchors are", old_anchor, "and", new_anchor);
                 break;
             }
             _ => (),
@@ -186,13 +195,13 @@ fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -
     let blocks_taken = old_anchor.count();
     let avail = old_anchor.avail();
 
-    // FIXME: ASSERT(avail < maxcount);
+    assert!(avail < max_count);
     let block = unsafe { superblock.offset((avail * block_size) as isize) };
 
     // cache must be empty at this point
     // and the blocks are already organized as a list
     // so all we need do is "push" that list, a constant time op
-    // FIXME: ASSERT(cache->GetBlockNum() == 0);
+    assert_eq!(cache.get_block_num(), 0);
     cache.push_list(block, blocks_taken);
 
     block_num + blocks_taken as usize
@@ -284,18 +293,18 @@ fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
         cache.pop_list(unsafe { *(tail as *mut *mut u8) }, block_count);
 
         let idx = compute_idx(superblock, head, sc_idx);
-
-        let old_anchor = unsafe { (*desc).get_anchor().load(Ordering::SeqCst) };
+        let mut old_anchor;
         let mut new_anchor;
 
         loop {
+            old_anchor = unsafe { (*desc).get_anchor().load(Ordering::SeqCst) };
+            new_anchor = old_anchor;
             let next: *mut u8 =
                 unsafe { superblock.offset((old_anchor.avail() * block_size) as isize) };
             unsafe {
                 *(tail as *mut *mut u8) = next;
             }
 
-            new_anchor = old_anchor;
             new_anchor.set_avail(idx);
 
             if old_anchor.state() == SbState::Full as u32 {
@@ -319,6 +328,7 @@ fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
                 )
             } {
                 Ok(_) => {
+                    log_debug!("Flushed on descriptor", desc, "anchors are", old_anchor, "and", new_anchor);
                     break;
                 }
                 _ => (),
@@ -381,7 +391,7 @@ fn cut_cache(sc_idx: usize, cache: &mut TCacheBin, cut_by: u32) {
             new_anchor.set_count(unsafe { (*desc).get_maxcount() - 1 });
             new_anchor.set_state(SbState::Empty as u32);
         } else {
-            new_anchor.set_count(new_anchor.count() + cut_by);
+            new_anchor.set_count(new_anchor.count() - cut_by);
         }
 
         match unsafe {
@@ -393,6 +403,7 @@ fn cut_cache(sc_idx: usize, cache: &mut TCacheBin, cut_by: u32) {
             )
         } {
             Ok(_) => {
+                log_debug!("Cut on descriptor", desc, "anchors are", old_anchor, "and", new_anchor);
                 break;
             }
             _ => (),
@@ -430,7 +441,6 @@ pub fn do_malloc(size: usize) -> *mut u8 {
     if unlikely(size > MAX_SZ) {
         let pages = page_ceiling(size);
         let desc = Descriptor::alloc();
-        // FIXME: ASSERT(desc); should we check for this???
 
         desc.set_heap(null_mut());
         desc.set_block_size(pages as u32);
@@ -460,11 +470,11 @@ pub fn do_malloc(size: usize) -> *mut u8 {
         SIZE_CLASSES[sc_idx].get_apf().inc_timer();
     }
 
-    unsafe { log_debug!("Demand: ", SIZE_CLASSES[sc_idx].get_apf().demand(None)); }
+    //unsafe { log_debug!("Demand: ", SIZE_CLASSES[sc_idx].get_apf().demand(None)); }
 
     let cache = unsafe { &mut TCACHE[sc_idx] };
 
-    unsafe { log_debug!("Thread cache: ", cache, " size class", SIZE_CLASSES[sc_idx]) };
+    //unsafe { log_debug!("Thread cache: ", cache, " size class", SIZE_CLASSES[sc_idx]) };
 
     if unlikely(cache.get_block_num() == 0) {
         fill_cache(sc_idx, cache);
@@ -488,6 +498,11 @@ pub fn do_aligned_alloc(alignment: usize, _size: usize) -> *mut u8 {
         init_malloc();
     }
 
+    // init size classes (here because APF analysis is per thread per sizeclass
+    if unlikely(unsafe { !APF_INIT }) {
+        init_size_class();
+    }
+
     if unlikely(size > PAGE) {
         size = core::cmp::max(size, MAX_SZ + 1);
 
@@ -498,7 +513,6 @@ pub fn do_aligned_alloc(alignment: usize, _size: usize) -> *mut u8 {
 
         let pages = page_ceiling(size);
         let desc = Descriptor::alloc();
-        // FIXME: ASSERT(desc); should we check for this???
 
         let mut ptr = unsafe { page_alloc::<u8>(pages) };
 
@@ -553,7 +567,7 @@ pub fn do_free(ptr: *mut u8) {
 
     let sc_idx = info.get_sc_idx();
 
-    log_debug!("Free: desc ", desc, ", ptr ", ptr);
+    //log_debug!("Free: desc ", desc, ", ptr ", ptr);
 
     if unlikely(sc_idx == 0) {
         let superblock = unsafe { (*desc).get_superblock() };
