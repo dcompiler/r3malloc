@@ -1,4 +1,4 @@
-use crate::defines::{align_addr, page_ceiling, PAGE, PAGE_MASK};
+use crate::defines::{align_addr, align_val, page_ceiling, PAGE, PAGE_MASK};
 use crate::heap::{Anchor, Descriptor, DescriptorNode, ProcHeap, SbState};
 use crate::log_debug;
 use crate::pagemap::{PageInfo, SPAGEMAP};
@@ -17,6 +17,12 @@ static mut MALLOC_INIT: bool = false;
 // Details here: https://rust-lang.github.io/rfcs/2203-const-repeat-expr.html
 const PROC_HEAP_INITIALIZER: ProcHeap = ProcHeap::const_new(0);
 pub static mut HEAPS: [ProcHeap; MAX_SZ_IDX] = [PROC_HEAP_INITIALIZER; MAX_SZ_IDX];
+
+pub fn thread_finalize() {
+    for sc_idx in 1..MAX_SZ_IDX {
+        flush_cache(sc_idx, unsafe{ &mut TCACHE[sc_idx] });
+    }
+}
 
 fn update_page_map(
     heap: Option<&ProcHeap>,
@@ -63,9 +69,10 @@ fn unregister_desc(heap: Option<&ProcHeap>, superblock: *mut u8) {
 
 pub fn heap_pop_partial<'a>(heap: &ProcHeap<'a>) -> *mut Descriptor<'a> {
     let list = heap.get_partial_list();
-    let old_head = list.load(Ordering::SeqCst);
+    let mut old_head;
 
     loop {
+        old_head = list.load(Ordering::SeqCst);
         let old_desc = old_head.get_desc();
         if old_desc.is_null() {
             return null_mut();
@@ -88,10 +95,10 @@ pub fn heap_pop_partial<'a>(heap: &ProcHeap<'a>) -> *mut Descriptor<'a> {
 
 pub fn heap_push_partial(desc: *mut Descriptor) {
     let list = unsafe { (*(*desc).get_heap()).get_partial_list() };
-    let old_head = list.load(Ordering::SeqCst);
     let mut new_head = DescriptorNode::new(null_mut());
 
     loop {
+        let old_head = list.load(Ordering::SeqCst);
         new_head.set_desc(desc, old_head.get_counter() + 1);
         // FIXME: ASSERT(oldHead.GetDesc() != newHead.GetDesc());
         unsafe {
@@ -140,12 +147,13 @@ fn malloc_from_partial(sc_idx: usize, cache: &mut TCacheBin, block_num: usize) -
     }
 
     // reserve blocks
-    let old_anchor = unsafe { (*desc).get_anchor().load(Ordering::SeqCst) };
+    let mut old_anchor;
     let max_count = unsafe { (*desc).get_maxcount() };
     let block_size = unsafe { (*desc).get_block_size() };
     let superblock: *mut u8 = unsafe { (*desc).get_superblock() };
 
     loop {
+        old_anchor = unsafe { (*desc).get_anchor().load(Ordering::SeqCst) };
         if old_anchor.state() == SbState::Empty as u32 {
             unsafe { (*desc).retire() }
             // retry
@@ -289,10 +297,11 @@ fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
 
         let idx = compute_idx(superblock, head, sc_idx);
 
-        let old_anchor = unsafe { (*desc).get_anchor().load(Ordering::SeqCst) };
+        let mut old_anchor;
         let mut new_anchor;
 
         loop {
+            old_anchor = unsafe { (*desc).get_anchor().load(Ordering::SeqCst) };
             let next: *mut u8 =
                 unsafe { superblock.offset((old_anchor.avail() * block_size) as isize) };
             unsafe {
@@ -397,10 +406,8 @@ pub fn do_aligned_alloc(alignment: usize, _size: usize) -> *mut u8 {
     if unlikely((alignment != 0) && !(alignment & (alignment - 1)) == 0) {
         return null_mut();
     }
-    let mut size = _size;
-
-    // FIXME: align size
-
+    let mut size = align_val(_size, alignment);
+    
     assert!(size > 0 && alignment > 0 && size >= alignment);
 
     // ensure malloc is initialized

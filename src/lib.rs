@@ -187,6 +187,11 @@ pub extern "C" fn pvalloc(size: usize) -> *mut libc::c_void {
     r3malloc::do_aligned_alloc(PAGE, size) as *mut libc::c_void
 }
 
+#[no_mangle]
+pub extern "C" fn r3malloc_thread_finalize() {
+    r3malloc::thread_finalize()
+}
+
 use core::panic::PanicInfo;
 
 // Called on panic
