@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Pavlo Pastaryev <p.pastaryev@gmail.com>"]
 
 [lib]
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["cdylib", "staticlib", "lib"]
 
 [dependencies]
 atomic = "0.5"
@@ -13,6 +13,9 @@ libc = "0.2"
 libc-print = "0.1.17"
 likely_stable = "0.1.2"
 c2rust-bitfields = { version = "0.3.0", features = ["no_std"] }
+
+[features]
+no_std = []
 
 # Both profile.dev and profile.release panic configs are needed because of no_std
 
