@@ -1,11 +1,12 @@
-#![no_std] // Disables Rust heap
+//#![no_std] // Disables Rust heap
+#![cfg_attr(feature = "no_std", no_std)]
 #![allow(dead_code)] // FIXME: have it here so there's no warning spam
 #![feature(thread_local)]
 #![feature(lang_items)]
 #![feature(const_mut_refs)]
 
-#[lang = "eh_personality"]
-extern "C" fn eh_personality() {}
+//#[lang = "eh_personality"]
+//extern "C" fn eh_personality() {}
 
 mod defines;
 mod heap;
@@ -15,7 +16,6 @@ mod pages;
 mod r3malloc;
 mod size_classes;
 mod tcache;
-mod apf;
 
 use heap::Anchor;
 use libc_print::libc_println;
@@ -25,6 +25,7 @@ use core::slice;
 use pagemap::SPAGEMAP;
 use size_classes::SIZE_CLASSES;
 use defines::{PTR_MASK, PAGE};
+use core::alloc::{GlobalAlloc, Layout};
 
 extern crate libc;
 
@@ -194,7 +195,32 @@ pub extern "C" fn r3malloc_thread_finalize() {
     r3malloc::thread_finalize()
 }
 
-use core::panic::PanicInfo;
+// Rust representation or r3malloc
+pub struct R3Malloc {
+
+}
+
+unsafe impl Sync for R3Malloc {}
+
+unsafe impl GlobalAlloc for R3Malloc {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        r3malloc::do_aligned_alloc(layout.align(), layout.size())
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+        r3malloc::do_free(ptr)
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        calloc(layout.size(), 1) as *mut u8
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, _layout: Layout, new_size: usize) -> *mut u8 {
+        realloc(ptr as *mut libc::c_void, new_size) as *mut u8
+    }
+}
+
+/*use core::panic::PanicInfo;
 
 // Called on panic
 #[panic_handler]
@@ -202,4 +228,6 @@ fn panic(info: &PanicInfo) -> ! {
     libc_println!("{}", info);
 
     loop {}
-}
+}*/
+#[cfg(feature = "std")]
+use std::panic::RefUnwindSafe;

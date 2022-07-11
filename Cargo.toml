@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Pavlo Pastaryev <p.pastaryev@gmail.com>"]
 
 [lib]
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["cdylib", "staticlib", "lib"]
 
 [dependencies]
 atomic = "0.5"
@@ -17,6 +17,7 @@ array-init = "2.0.0"
 
 [features]
 all_windows = []
+no_std = []
 
 # Both profile.dev and profile.release panic configs are needed because of no_std
 
