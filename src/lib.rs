@@ -4,10 +4,12 @@
 #![feature(thread_local)]
 #![feature(lang_items)]
 #![feature(const_mut_refs)]
+#![feature(unchecked_math)]
 
 //#[lang = "eh_personality"]
 //extern "C" fn eh_personality() {}
 
+mod apf;
 mod defines;
 mod heap;
 mod log;

@@ -16,7 +16,6 @@ c2rust-bitfields = { version = "0.3.0", features = ["no_std"] }
 array-init = "2.0.0"
 
 [features]
-all_windows = []
 no_std = []
 
 # Both profile.dev and profile.release panic configs are needed because of no_std

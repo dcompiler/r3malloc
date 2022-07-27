@@ -354,75 +354,89 @@ fn flush_cache(sc_idx: usize, cache: &mut TCacheBin) {
 fn cut_cache(sc_idx: usize, cache: &mut TCacheBin, cut_by: u32) {
     let heap = unsafe { &HEAPS[sc_idx] };
     let sc = unsafe { &SIZE_CLASSES[sc_idx] };
+    let sb_size = sc.get_sb_size();
     let block_size = sc.get_block_size();
     let maxcount = sc.get_block_num();
 
-    let head = cache.peek_block();
-    let mut tail = head;
-    let info = unsafe { SPAGEMAP.get_page_info(head) };
-    let desc = info.get_desc();
-    let superblock = unsafe { (*desc).get_superblock() };
+        let head = cache.peek_block();
+        let mut tail = head;
+        let info = unsafe { SPAGEMAP.get_page_info(head) };
+        let desc = info.get_desc();
+        let superblock = unsafe { (*desc).get_superblock() };
+        let mut block_count = 1;
 
-    for _ in 0..cut_by {
-        tail = cache.pop_block();
-    }
-
-    let idx = compute_idx(superblock, head, sc_idx);
-
-    let old_anchor = unsafe { (*desc).get_anchor().load(Ordering::SeqCst) };
-    let mut new_anchor;
-
-    loop {
-        let next: *mut u8 =
-            unsafe { superblock.offset((old_anchor.avail() * block_size) as isize) };
-        unsafe {
-            *(tail as *mut *mut u8) = next;
-        }
-
-        new_anchor = old_anchor;
-        new_anchor.set_avail(idx);
-
-        if old_anchor.state() == SbState::Full as u32 {
-            new_anchor.set_state(SbState::Partial as u32);
-        }
-
-        assert!(unsafe { old_anchor.count() < (*desc).get_maxcount() });
-        if unsafe { old_anchor.count() + cut_by == (*desc).get_maxcount() } {
-            new_anchor.set_count(unsafe { (*desc).get_maxcount() - 1 });
-            new_anchor.set_state(SbState::Empty as u32);
-        } else {
-            new_anchor.set_count(new_anchor.count() - cut_by);
-        }
-
-        match unsafe {
-            (*desc).get_anchor().compare_exchange_weak(
-                old_anchor,
-                new_anchor,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            )
-        } {
-            Ok(_) => {
-                log_debug!("Cut on descriptor", desc, "anchors are", old_anchor, "and", new_anchor);
+        while block_count != cut_by {
+            let ptr: *mut u8 = unsafe { *(tail as *mut *mut u8) };
+            if unsafe {
+                ptr.offset_from(superblock) < 0
+                    || ptr.offset_from(superblock.offset(sb_size as isize)) >= 0
+            } {
                 break;
             }
-            _ => (),
+
+            block_count += 1;
+            tail = ptr;
         }
-    }
 
-    assert!(old_anchor.avail() < maxcount || old_anchor.state() == SbState::Full as u32);
-    assert!(new_anchor.avail() < maxcount);
-    assert!(new_anchor.count() < maxcount);
+        cache.pop_list(unsafe { *(tail as *mut *mut u8) }, block_count);
 
-    if new_anchor.state() == SbState::Empty as u32 {
-        unregister_desc(Some(heap), superblock);
+        let idx = compute_idx(superblock, head, sc_idx);
+        let mut old_anchor;
+        let mut new_anchor;
 
-        unsafe {
-            page_free(superblock, heap.get_size_class().get_sb_size() as usize);
+        loop {
+            old_anchor = unsafe { (*desc).get_anchor().load(Ordering::SeqCst) };
+            new_anchor = old_anchor;
+            let next: *mut u8 =
+                unsafe { superblock.offset((old_anchor.avail() * block_size) as isize) };
+            unsafe {
+                *(tail as *mut *mut u8) = next;
+            }
+
+            new_anchor.set_avail(idx);
+
+            if old_anchor.state() == SbState::Full as u32 {
+                new_anchor.set_state(SbState::Partial as u32);
+            }
+
+            log_debug!(maxcount, new_anchor.count(), cut_by, block_count);
+            assert!(unsafe { old_anchor.count() < (*desc).get_maxcount() });
+            if unsafe { old_anchor.count() + block_count == (*desc).get_maxcount() } {
+                new_anchor.set_count(unsafe { (*desc).get_maxcount() - 1 });
+                new_anchor.set_state(SbState::Empty as u32);
+            } else {
+                new_anchor.set_count(new_anchor.count() + block_count);
+            }
+
+            match unsafe {
+                (*desc).get_anchor().compare_exchange_weak(
+                    old_anchor,
+                    new_anchor,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+            } {
+                Ok(_) => {
+                    log_debug!("Cut on descriptor", desc, "anchors are", old_anchor, "and", new_anchor);
+                    break;
+                }
+                _ => (),
+            }
         }
-    } else if old_anchor.state() == SbState::Full as u32 {
-        heap_push_partial(desc);
-    }
+
+        assert!(old_anchor.avail() < maxcount || old_anchor.state() == SbState::Full as u32);
+        assert!(new_anchor.avail() < maxcount);
+        assert!(new_anchor.count() < maxcount);
+
+        if new_anchor.state() == SbState::Empty as u32 {
+            unregister_desc(Some(heap), superblock);
+
+            unsafe {
+                page_free(superblock, heap.get_size_class().get_sb_size() as usize);
+            }
+        } else if old_anchor.state() == SbState::Full as u32 {
+            heap_push_partial(desc);
+        }
 }
 
 #[inline(always)]
