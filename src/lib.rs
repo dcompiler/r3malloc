@@ -222,14 +222,17 @@ unsafe impl GlobalAlloc for R3Malloc {
     }
 }
 
-/*use core::panic::PanicInfo;
+#[no_mangle]
+pub extern "C" fn get_target_apf(size: usize) -> u32 {
+    let sc_idx = size_classes::get_size_class(size);
+    unsafe { size_classes::SIZE_CLASSES[sc_idx].get_apf().get_target_apf() }
+}
 
-// Called on panic
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    libc_println!("{}", info);
+#[no_mangle]
+pub extern "C" fn set_target_apf(size: usize, apf: u32) {
+    let sc_idx = size_classes::get_size_class(size);
+    unsafe { size_classes::SIZE_CLASSES[sc_idx].get_apf().set_target_apf(apf) }
+}
 
-    loop {}
-}*/
 #[cfg(feature = "std")]
 use std::panic::RefUnwindSafe;

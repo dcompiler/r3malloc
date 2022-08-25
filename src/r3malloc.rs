@@ -503,6 +503,12 @@ pub fn do_aligned_alloc(alignment: usize, _size: usize) -> *mut u8 {
     if unlikely((alignment != 0) && !(alignment & (alignment - 1)) == 0) {
         return null_mut();
     }
+
+    // init size classes (here because APF analysis is per thread per sizeclass
+    if unlikely(unsafe { !APF_INIT }) {
+        init_size_class();
+    }
+
     let mut size = align_val(_size, alignment);
 
     assert!(size > 0 && alignment > 0 && size >= alignment);
@@ -574,6 +580,11 @@ pub fn do_aligned_alloc(alignment: usize, _size: usize) -> *mut u8 {
 pub fn do_free(ptr: *mut u8) {
     if unlikely(ptr.is_null()) {
         return;
+    }
+
+    // init size classes (here because APF analysis is per thread per sizeclass
+    if unlikely(unsafe { !APF_INIT }) {
+        init_size_class();
     }
 
     let info = unsafe { SPAGEMAP.get_page_info(ptr) };
